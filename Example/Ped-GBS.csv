@@ -1,0 +1,97 @@
+IndivID,seqID,Family,Relationship,FatherID,MotherID,FatherGroup,MotherGroup
+1,Seq1,1,Dam,5,3,,
+2,Seq2,1,Grand Dam,,,,
+3,Seq3,1,Grand Dam,,,,
+4,Seq4,1,Grand Sire,,,,
+5,Seq5,1,Grand Sire,,,,
+6,Seq6,1,Offspring,23,1,,B
+7,Seq7,1,Offspring,23,1,,B
+8,Seq8,1,Offspring,23,1,,B
+9,Seq9,1,Offspring,23,1,,B
+10,Seq10,1,Offspring,23,1,,B
+11,Seq11,1,Offspring,23,1,,B
+12,Seq12,1,Offspring,23,1,,B
+13,Seq13,1,Offspring,23,1,,B
+14,Seq14,1,Offspring,23,1,,B
+15,Seq15,1,Offspring,23,1,,B
+16,Seq16,1,Offspring,23,1,,B
+17,Seq17,1,Offspring,23,1,,B
+18,Seq18,1,Offspring,23,1,,B
+19,Seq19,1,Offspring,23,1,,B
+20,Seq20,1,Offspring,23,1,,B
+21,Seq21,1,Offspring,23,1,,B
+22,Seq22,1,Offspring,23,1,,B
+23,Seq23,1,Sire,4,2,,
+24,Seq24,2,Dam,28,25,,
+25,Seq25,2,Grand Dam,,,,
+26,Seq26,2,Grand Dam,,,,
+27,Seq27,2,Grand Sire,,,,
+28,Seq28,2,Grand Sire,,,,
+29,Seq29,2,Offspring,47,24,,
+30,Seq30,2,Offspring,47,24,,
+31,Seq31,2,Offspring,47,24,,
+32,Seq32,2,Offspring,47,24,,
+33,Seq33,2,Offspring,47,24,,
+34,Seq34,2,Offspring,47,24,,
+35,Seq35,2,Offspring,47,24,,
+36,Seq36,2,Offspring,47,24,,
+37,Seq37,2,Offspring,47,24,,
+38,Seq38,2,Offspring,47,24,,
+39,Seq39,2,Offspring,47,24,,
+40,Seq40,2,Offspring,47,24,,
+41,Seq41,2,Offspring,47,24,,
+42,Seq42,2,Offspring,47,24,,
+43,Seq43,2,Offspring,47,24,,
+44,Seq44,2,Offspring,47,24,,
+45,Seq45,2,Offspring,47,24,,
+46,Seq46,2,Offspring,47,24,,
+47,Seq47,2,Sire,27,26,,
+48,Seq48,3,Dam,52,50,,
+49,Seq49,3,Grand Dam,,,,
+50,Seq50,3,Grand Dam,,,,
+51,Seq51,3,Grand Sire,,,,
+52,Seq52,3,Grand Sire,,,,
+53,Seq53,3,Offspring,71,48,,
+54,Seq54,3,Offspring,71,48,,
+55,Seq55,3,Offspring,71,48,,
+56,Seq56,3,Offspring,71,48,,
+57,Seq57,3,Offspring,71,48,,
+58,Seq58,3,Offspring,71,48,,
+59,Seq59,3,Offspring,71,48,,
+60,Seq60,3,Offspring,71,48,,
+61,Seq61,3,Offspring,71,48,,
+62,Seq62,3,Offspring,71,48,,
+63,Seq63,3,Offspring,71,48,,
+64,Seq64,3,Offspring,71,48,,
+65,Seq65,3,Offspring,71,48,,
+66,Seq66,3,Offspring,71,48,,
+67,Seq67,3,Offspring,71,48,,
+68,Seq68,3,Offspring,71,48,,
+69,Seq69,3,Offspring,71,48,,
+70,Seq70,3,Offspring,71,48,,
+71,Seq71,3,Sire,51,49,,
+72,Seq72,4,Dam,75,73,,
+73,Seq73,4,Grand Dam,,,,
+74,Seq74,4,Grand Dam,,,,
+75,Seq75,4,Grand Sire,,,,
+76,Seq76,4,Grand Sire,,,,
+77,Seq77,4,Offspring,94,72,A,
+78,Seq78,4,Offspring,94,72,A,
+79,Seq79,4,Offspring,94,72,A,
+80,Seq80,4,Offspring,94,72,A,
+81,Seq81,4,Offspring,94,72,A,
+82,Seq82,4,Offspring,94,72,A,
+83,Seq83,4,Offspring,94,72,A,
+84,Seq84,4,Offspring,94,72,A,
+85,Seq85,4,Offspring,94,72,A,
+86,Seq86,4,Offspring,94,72,A,
+87,Seq87,4,Offspring,94,72,A,
+88,Seq88,4,Offspring,94,72,A,
+89,Seq89,4,Offspring,94,72,A,
+90,Seq90,4,Offspring,94,72,A,
+91,Seq91,4,Offspring,94,72,A,
+92,Seq92,4,Offspring,94,72,A,
+93,Seq93,4,Offspring,94,72,A,
+94,Seq94,4,Sire,76,74,,
+95,Blank,,negative,,,,
+96,Ref,,reference,,,,

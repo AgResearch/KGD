@@ -48,6 +48,7 @@ if (gform=="chip") {
   nind <- nind - length(u0)
   }
 
+ write.csv(data.frame(seqID=seqID),"seqID.csv",row.names=FALSE)
  if (gform=="uneak") AFrq <- genosin[[length(genosin)]]
  allelecounts <- colSums(alleles)
  RAcounts <- matrix(allelecounts,ncol=2,byrow=TRUE) # 1 row per SNP, ref and alt allele counts
@@ -278,7 +279,7 @@ calcG <- function(snpsubset,sfx="",puse,indsubset,depth.min=0,depth.max=Inf,npc=
  GGBS5d <- 1 + rowSums(  (genon01^2- 2*P0*P1*(1+2/2^depth[indsubset,snpsubset]))/(1-2/2^depth[indsubset,snpsubset]) )/diag(div0)
  GGBS5 <- GGBS4
  diag(GGBS5) <- GGBS5d
-
+ cat("Mean self-relatedness (G5 diagonal):",mean(GGBS5d),"\n")
 
  uhirel <- which(GGBS5 > hirel.thresh & upper.tri(GGBS5), arr.ind=TRUE)
  if (nrow(uhirel)>0) write.csv(data.frame(Indiv1=seqID[uhirel[,1]],Indiv2=seqID[uhirel[,2]],G5rel=GGBS5[uhirel]),"HighRelatedness.csv",row.names=FALSE)

@@ -99,6 +99,40 @@ if(exists("pedfile") & exists("GCheck")) {
  pedinfo <- pedinfo[!is.na(match(pedinfo$seqID,seqID)),]
  if("FatherID" %in% colnames(pedinfo)) pedinfo <- parmatch("Father",eval(parse(text=GCheck)))
  if("MotherID" %in% colnames(pedinfo)) pedinfo <- parmatch("Mother",eval(parse(text=GCheck)))
+ if("FatherID" %in% colnames(pedinfo) & "MotherID" %in% colnames(pedinfo)) {
+  if (is.character(pedinfo$IndivID)) {
+   umiss <- which(pedinfo$FatherID=="")
+   if(length(umiss)>0) pedinfo$FatherID[umiss] <- NA
+   umiss <- which(pedinfo$MotherID=="")
+   if(length(umiss)>0) pedinfo$MotherID[umiss] <- NA
+   }
+  famtable <-  with(pedinfo,table(FatherID,MotherID))
+  fampos <- which(famtable>1,arr.ind=TRUE)
+  famfathers <- dimnames(famtable)$FatherID[fampos[,1]]
+  fammothers <- dimnames(famtable)$MotherID[fampos[,2]]
+  if (is.numeric(pedinfo$FatherID)) famfathers <- as.numeric(famfathers)
+  if (is.numeric(pedinfo$FatherID)) famfathers <- as.numeric(famfathers)
+  noffspring <- famtable[fampos]
+  nfamilies <- length(noffspring)
+  famnumber <- rep(NA,nrow(pedinfo))
+  famresults <- rep(NA,nfamilies)
+  for (ifam in 1:nfamilies) {
+   famnumber[which(pedinfo$FatherID==famfathers[ifam] & pedinfo$MotherID==fammothers[ifam])] <- ifam
+   uoffspring <- match(pedinfo$seqID[which(famnumber==ifam)],seqID)
+   famresults[ifam] <- mean(eval(parse(text=GCheck))[uoffspring,uoffspring][upper.tri(diag(nrow=length(uoffspring)))])
+   }
+  cat("Mean relatedness for full-sib families (as given)\n")
+  print(data.frame(famfathers,fammothers,noffspring,meanrel=famresults))
+  cat("Mean relatedness within all full-sib families",weighted.mean(famresults,noffspring),"\n")
+
+  uoffspring <- which(!is.na(famnumber))
+  Fatherset <- unique(na.omit(pedinfo$FatherID))
+  Motherset <- unique(na.omit(pedinfo$MotherID))
+  udiff.fathers <- which(!match(pedinfo$FatherID[uoffspring],Fatherset) %*% t(rep(1,length(uoffspring))) == rep(1,length(uoffspring))  %*% t(match(pedinfo$FatherID[uoffspring],Fatherset)),arr.ind=T)
+  udiff.mothers <- which(!match(pedinfo$MotherID[uoffspring],Motherset) %*% t(rep(1,length(uoffspring))) == rep(1,length(uoffspring))  %*% t(match(pedinfo$MotherID[uoffspring],Motherset)),arr.ind=T)
+  udiff <- as.matrix(merge(udiff.fathers,udiff.mothers))
+  cat("Mean relatedness between individuals in full-sib families with different parents",mean(eval(parse(text=GCheck))[uoffspring,uoffspring][udiff]),"\n")
+  }
  write.csv(pedinfo,"PedVerify.csv",row.names=FALSE)
  if(exists("groupsfile")) {
   groupsinfo <- read.csv(groupsfile,stringsAsFactors=FALSE)

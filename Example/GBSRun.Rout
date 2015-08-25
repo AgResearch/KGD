@@ -1,0 +1,70 @@
+
+R version 3.0.1 (2013-05-16) -- "Good Sport"
+Copyright (C) 2013 The R Foundation for Statistical Computing
+Platform: x86_64-redhat-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> genofile <- "HapMap.hmc.txt.gz"
+> 
+> source("/home/doddsk/GBS/Code/GBS-Chip-Gmatrix.R")
+Read 102 items
+Read 14709 records
+Analysing 96 individuals and 14709 SNPs
+Proportion of missing genotypes:  0.3640826 
+Mean sample depth: 9.281431 
+> Gfull <- calcG()
+Calculating G matrix, analysis code:  
+# SNPs:  14709 
+# individuals:  96 
+Proportion of missing genotypes:  0.3640826 
+Mean sample depth: 9.281431 
+Mean self-relatedness (G5 diagonal): 1.215244 
+> GHWdgm.05 <- calcG(which(HWdis > -0.05),"HWdgm.05", npc=4)  # recalculate using Hardy-Weinberg disequilibrium cut-off at -0.05
+Calculating G matrix, analysis code: HWdgm.05 
+# SNPs:  11500 
+# individuals:  96 
+Proportion of missing genotypes:  0.445558 
+Mean sample depth: 4.348901 
+Mean self-relatedness (G5 diagonal): 1.577778 
+minimum eigenvalue:  8.905638e-36 
+> 
+> pedfile <- "Ped-GBS.csv"
+> groupsfile <- "Ped-Groups.csv"
+> 
+> rel.thresh <- 0.2
+> GCheck <- "GHWdgm.05$G5"
+> source("/home/doddsk/GBS/Code/GBSPedAssign.R")
+56 matches out of 78 Father comparisons: 71.8 %
+Mean relatedness for Father matches 0.26 
+Mean relatedness for Father non-matches -0.0238 
+51 matches out of 78 Mother comparisons: 65.4 %
+Mean relatedness for Mother matches 0.298 
+Mean relatedness for Mother non-matches 0.0181 
+Mean relatedness for full-sib families
+  famfathers fammothers noffspring   meanrel
+1         23          1         17 0.2286663
+2         47         24         18 0.2653806
+3         71         48         18 0.2921438
+4         94         72         17 0.2499820
+Mean relatedness within all full-sib families 0.2596066 
+Mean relatedness between individuals in full-sib families with different parents -0.04724106 
+> 
+> #G5 <- GHWdgm.05$G5
+> #save(G5,file="G5.RData")
+> 
+> proc.time()
+   user  system elapsed 
+ 31.823   0.371  14.732 
