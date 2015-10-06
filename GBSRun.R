@@ -9,7 +9,7 @@ groupsfile <- "Ped-Groups.csv"
 
 rel.thresh <- 0.2
 GCheck <- "GHWdgm.05$G5"
-source("/home/doddsk/GBS/Code/GBSPedAssign.R")
+source("/Code/GBSPedAssign.R")
 
 #G5 <- GHWdgm.05$G5
 #save(G5,file="G5.RData")
