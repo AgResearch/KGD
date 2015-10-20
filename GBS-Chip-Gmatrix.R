@@ -1,6 +1,7 @@
 if (!exists("gform")) gform <- "uneak"
 if (!exists("genofile")) genofile <- "HapMap.hmc.txt"
 if (!exists("sampdepth.thresh")) sampdepth.thresh <- 0.01
+if (!exists("snpdepth.thresh")) snpdepth.thresh <- 0.01
 if (!exists("hirel.thresh")) hirel.thresh <- 0.9
 
 if (gform=="chip") {
@@ -58,9 +59,10 @@ if (gform=="chip") {
  acountmax <- max(rowSums(RAcounts))
  } #end GBS-specific
 
-uremove <- which(p==0 | p==1 | is.nan(p))
+snpdepth <- colMeans(depth)
+uremove <- which(p==0 | p==1 | is.nan(p) | snpdepth<snpdepth.thresh)
 if (length(uremove)>0 ) {
- cat(length(uremove),"SNPs with MAF=0 or no data removed\n")
+ cat(length(uremove),"SNPs with MAF=0 or depth <",snpdepth.thresh,"removed\n")
  p <- p[-uremove]
  nsnps <- length(p) 
  depth <- depth[,-uremove]
@@ -164,11 +166,12 @@ finpalette <- colorRampPalette(c(rgb(200, 200,200 , max = 255), "blue"))(50)  # 
 depthtrans <- function(x) round(20*log(-log(1/(x+0.9))+1.05))                 # to compress colour scale at higher depths
 depthpoints <- c(0.5,5,50,250)                                                # legend points
 transpoints <- depthtrans(depthpoints)
+mindepthplot <- 0.1
 maxdepthplot <- 256
 maxtrans=depthtrans(maxdepthplot)
 legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol=1))
 png("finplot.png",width = 640, height = 640, pointsize = 15)
- plot(HWdis ~ maf, col=finpalette[depthtrans(pmin(snpdepth,maxdepthplot))], cex=0.8, xlab="MAF",ylab="Hardy-Weinberg disequilibrium",cex.lab=1.5)
+ plot(HWdis ~ maf, col=finpalette[depthtrans(pmax(mindepthplot,pmin(snpdepth,maxdepthplot)))], cex=0.8, xlim=c(0,0.5), xlab="MAF",ylab="Hardy-Weinberg disequilibrium",cex.lab=1.5)
  rasterImage(legend_image, .05, -.2, .07 ,-.1)
  text(x=0.1, y = -0.2 + 0.1 *transpoints/maxtrans , labels = format(depthpoints))
  text(x=0.075,y=-0.075,labels="SNP Depth", cex=1.2)
@@ -180,7 +183,7 @@ transpoints <- sigtrans(sigpoints)
 maxtrans=sigtrans(max(l10LRT))
 legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol=1))
 png("HWdisMAFsig.png",width = 640, height = 640, pointsize = 15)
- plot(HWdis ~ maf, col=finpalette[sigtrans(l10LRT)], cex=0.8, xlab="MAF",ylab="Hardy-Weinberg disequilibrium",cex.lab=1.5)
+ plot(HWdis ~ maf, col=finpalette[sigtrans(l10LRT)], cex=0.8, xlim=c(0,0.5), xlab="MAF",ylab="Hardy-Weinberg disequilibrium",cex.lab=1.5)
  rasterImage(legend_image, .05, -.2, .07 ,-.1)
  text(x=0.1, y = -0.2 + 0.1 *transpoints/maxtrans , labels = format(sigpoints)) 
  text(x=0.075,y=-0.075,labels="log10 LRT", cex=1.2)
