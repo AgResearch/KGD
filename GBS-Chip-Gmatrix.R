@@ -1,3 +1,5 @@
+#!/bin/env Rscript
+
 if (!exists("gform")) gform <- "uneak"
 if (!exists("genofile")) genofile <- "HapMap.hmc.txt"
 if (!exists("sampdepth.thresh")) sampdepth.thresh <- 0.01

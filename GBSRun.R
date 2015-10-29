@@ -1,6 +1,9 @@
-genofile <- "HapMap.hmc.txt.gz"
+#!/bin/env Rscript
 
-source("/Code/GBS-Chip-Gmatrix.R")
+genofile <- "Example/HapMap.hmc.txt.gz"
+
+source("GBS-Chip-Gmatrix.R")
+
 Gfull <- calcG()
 GHWdgm.05 <- calcG(which(HWdis > -0.05),"HWdgm.05", npc=4)  # recalculate using Hardy-Weinberg disequilibrium cut-off at -0.05
 
