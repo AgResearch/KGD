@@ -1,3 +1,6 @@
+#!/bin/echo Source me don't execute me 
+
+
 # assume all in pedfile are in the genotype results. To do: remove those that are not
 
 if (!exists("rel.thresh")) rel.thresh <- 0.4

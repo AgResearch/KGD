@@ -1,10 +1,11 @@
-#!/bin/env Rscript
+#!/bin/echo Source me don't execute me 
 
-if (!exists("gform")) gform <- "uneak"
-if (!exists("genofile")) genofile <- "HapMap.hmc.txt"
-if (!exists("sampdepth.thresh")) sampdepth.thresh <- 0.01
-if (!exists("snpdepth.thresh")) snpdepth.thresh <- 0.01
-if (!exists("hirel.thresh")) hirel.thresh <- 0.9
+
+if (!exists("gform"))             gform            <- "uneak"
+if (!exists("genofile"))          genofile         <- "HapMap.hmc.txt"
+if (!exists("sampdepth.thresh"))  sampdepth.thresh <- 0.01
+if (!exists("snpdepth.thresh"))   snpdepth.thresh  <- 0.01
+if (!exists("hirel.thresh"))      hirel.thresh     <- 0.9
 
 if (gform=="chip") {
   genost<-read.csv(genofile,stringsAsFactors = FALSE)
@@ -16,50 +17,50 @@ if (gform=="chip") {
   depth <- matrix(Inf,nrow=nind,ncol=nsnps)
   depth[is.na(genon)] <- 0
   p <- colMeans(genon,na.rm=T)/2 # same as pg further down
- } else {
- gsep=switch(gform,uneak="|",Tassel=",")
- ghead <- scan(genofile,what="",nlines=1,sep="\t")
- nind <- length(ghead)-switch(gform,uneak=6,Tassel=2)
- seqID <- switch(gform,uneak=ghead[2:(nind+1)],Tassel=ghead[-(1:2)])
- if (gform=="Tassel") genosin <- scan(genofile,skip=1,sep="\t",what=c(list(chrom="",coord=0),rep(list(""),nind))) 
- if (gform=="uneak") genosin <- scan(genofile,skip=1,sep="\t",what=c(list(chrom=""),rep(list(""),nind),list(hetc1=0,hetc2=0,acount1=0,acount2=0,p=0))) 
- nsnps <- length(genosin[[1]])  
- alleles <- matrix(0,nrow=nind,ncol=2*nsnps)
- for (iind in 1:nind) alleles[iind,] <- matrix(as.numeric(unlist(strsplit(genosin[[iind+switch(gform,uneak=1,Tassel=2)]],split=gsep,fixed=TRUE))),nrow=1)  
- depth <- alleles[,seq(1,2*nsnps-1,2)]+alleles[,seq(2,2*nsnps,2)]
- sampdepth.max <- apply(depth,1,max)
- sampdepth <- rowMeans(depth) 
+} else {
+  gsep=switch(gform,uneak="|",Tassel=",")
+  ghead <- scan(genofile,what="",nlines=1,sep="\t")
+  nind <- length(ghead)-switch(gform,uneak=6,Tassel=2)
+  seqID <- switch(gform,uneak=ghead[2:(nind+1)],Tassel=ghead[-(1:2)])
+  if (gform=="Tassel") genosin <- scan(genofile,skip=1,sep="\t",what=c(list(chrom="",coord=0),rep(list(""),nind))) 
+  if (gform=="uneak") genosin <- scan(genofile,skip=1,sep="\t",what=c(list(chrom=""),rep(list(""),nind),list(hetc1=0,hetc2=0,acount1=0,acount2=0,p=0))) 
+  nsnps <- length(genosin[[1]])  
+  alleles <- matrix(0,nrow=nind,ncol=2*nsnps)
+  for (iind in 1:nind) alleles[iind,] <- matrix(as.numeric(unlist(strsplit(genosin[[iind+switch(gform,uneak=1,Tassel=2)]],split=gsep,fixed=TRUE))),nrow=1)  
+  depth <- alleles[,seq(1,2*nsnps-1,2)]+alleles[,seq(2,2*nsnps,2)]
+  sampdepth.max <- apply(depth,1,max)
+  sampdepth <- rowMeans(depth) 
 
- u0 <- which(sampdepth.max==0)
- u1 <- setdiff(which(sampdepth.max==1 | sampdepth < sampdepth.thresh),u0)
- nmax0 <- length(u0)
- nmax1 <- length(u1)
- if (nmax0>0) {
-  cat(nmax0,"samples with no calls (maximum depth = 0) removed:\n")
-  print(data.frame(indnum=u0,seqID=seqID[u0]))
+  u0 <- which(sampdepth.max==0)
+  u1 <- setdiff(which(sampdepth.max==1 | sampdepth < sampdepth.thresh),u0)
+  nmax0 <- length(u0)
+  nmax1 <- length(u1)
+  if (nmax0>0) {
+    cat(nmax0,"samples with no calls (maximum depth = 0) removed:\n")
+    print(data.frame(indnum=u0,seqID=seqID[u0]))
   }
- if (nmax1>0) {
-  cat(nmax1,"additional samples with maximum depth of 1 and/or mean depth <",sampdepth.thresh,"removed:\n")
-  print(data.frame(indnum=u1,seqID=seqID[u1]))
+  if (nmax1>0) {
+    cat(nmax1,"additional samples with maximum depth of 1 and/or mean depth <",sampdepth.thresh,"removed:\n")
+    print(data.frame(indnum=u1,seqID=seqID[u1]))
   }
- u0 <- union(u0,u1)
- if (length(u0) > 0) {
-  alleles <- alleles[-u0,]
-  depth <- depth[-u0,]
-  sampdepth <- sampdepth[-u0]
-  seqID <- seqID[-u0]
-  nind <- nind - length(u0)
+  u0 <- union(u0,u1)
+  if (length(u0) > 0) {
+    alleles <- alleles[-u0,]
+    depth <- depth[-u0,]
+    sampdepth <- sampdepth[-u0]
+    seqID <- seqID[-u0]
+    nind <- nind - length(u0)
   }
 
- write.csv(data.frame(seqID=seqID),"seqID.csv",row.names=FALSE)
- if (gform=="uneak") AFrq <- genosin[[length(genosin)]]
- allelecounts <- colSums(alleles)
- RAcounts <- matrix(allelecounts,ncol=2,byrow=TRUE) # 1 row per SNP, ref and alt allele counts
- p <- RAcounts[,1]/rowSums(RAcounts)  # p for ref allele - based on # reads, not on inferred # alleles
+  write.csv(data.frame(seqID=seqID),"seqID.csv",row.names=FALSE)
+  if (gform=="uneak") AFrq <- genosin[[length(genosin)]]
+  allelecounts <- colSums(alleles)
+  RAcounts <- matrix(allelecounts,ncol=2,byrow=TRUE) # 1 row per SNP, ref and alt allele counts
+  p <- RAcounts[,1]/rowSums(RAcounts)  # p for ref allele - based on # reads, not on inferred # alleles
 
- acountmin <- 1
- acountmax <- max(rowSums(RAcounts))
- } #end GBS-specific
+  acountmin <- 1
+  acountmax <- max(rowSums(RAcounts))
+} #end GBS-specific
 
 snpdepth <- colMeans(depth)
 uremove <- which(p==0 | p==1 | is.nan(p) | snpdepth<snpdepth.thresh)
