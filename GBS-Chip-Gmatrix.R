@@ -9,16 +9,19 @@ if (!exists("hirel.thresh"))     hirel.thresh     <- 0.9
 
 
 if (gform == "chip") {
-  genost <- read.csv(genofile, stringsAsFactors = FALSE)
-  seqID <- genost[, 1]
+  ghead <- scan(genofile,what="",nlines=1,sep=",")
+  genost <- scan(genofile,what="",skip=1,sep=",") # read as text ... easier to pull out elements than list of nsnps+1
+  SNP_Names <- ghead[-1]
+  nsnps <- length(SNP_Names)
+  snpnums <- ((1:length(genost))-1) %% (nsnps+1)
+  genon <- matrix(as.numeric(genost[which(snpnums !=0)]) ,ncol=nsnps,byrow=TRUE)
+  seqID <-  genost[which(snpnums ==0)]
   nind <- length(seqID)
-  genon <- as.matrix(genost[, -1])
-  nsnps <- ncol(genon)
   rm(genost)
   depth <- matrix(Inf, nrow = nind, ncol = nsnps)
   depth[is.na(genon)] <- 0
-  p <- colMeans(genon, na.rm = T)/2  # same as pg further down
-} else {
+  p <- colMeans(genon, na.rm = TRUE)/2 # same as pg further down
+ } else {
   gsep = switch(gform, uneak = "|", Tassel = ",")
   ghead <- scan(genofile, what = "", nlines = 1, sep = "\t")
   nind <- length(ghead) - switch(gform, uneak = 6, Tassel = 2)
@@ -26,12 +29,12 @@ if (gform == "chip") {
   if (gform == "Tassel") 
     genosin <- scan(genofile, skip = 1, sep = "\t", what = c(list(chrom = "", coord = 0), rep(list(""), nind)))
   if (gform == "uneak") 
-    genosin <- scan(genofile, skip = 1, sep = "\t", what = c(list(chrom = ""), rep(list(""), nind), list(hetc1 = 0, hetc2 = 0, acount1 = 0, 
-                                                                                                         acount2 = 0, p = 0)))
-  nsnps <- length(genosin[[1]])
+    genosin <- scan(genofile, skip = 1, sep = "\t", what = c(list(chrom = ""), rep(list(""), nind), list(hetc1 = 0, hetc2 = 0, acount1 = 0, acount2 = 0, p = 0)))
+  SNP_Names <- genosin[[1]]
+  nsnps <- length(SNP_Names)
   alleles <- matrix(0, nrow = nind, ncol = 2 * nsnps)
   for (iind in 1:nind) alleles[iind, ] <- matrix(as.numeric(unlist(strsplit(genosin[[iind + switch(gform, uneak = 1, Tassel = 2)]], split = gsep, 
-                                                                            fixed = TRUE))), nrow = 1)
+                                                 fixed = TRUE))), nrow = 1)
   depth <- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
   sampdepth.max <- apply(depth, 1, max)
   sampdepth <- rowMeans(depth)
@@ -41,13 +44,13 @@ if (gform == "chip") {
   nmax0 <- length(u0)
   nmax1 <- length(u1)
   if (nmax0 > 0) {
-    cat(nmax0, "samples with no calls (maximum depth = 0) removed:\n")
-    print(data.frame(indnum = u0, seqID = seqID[u0]))
-  }
+   cat(nmax0, "samples with no calls (maximum depth = 0) removed:\n")
+   print(data.frame(indnum = u0, seqID = seqID[u0]))
+   }
   if (nmax1 > 0) {
-    cat(nmax1, "additional samples with maximum depth of 1 and/or mean depth <", sampdepth.thresh, "removed:\n")
-    print(data.frame(indnum = u1, seqID = seqID[u1]))
-  }
+   cat(nmax1, "additional samples with maximum depth of 1 and/or mean depth <", sampdepth.thresh, "removed:\n")
+   print(data.frame(indnum = u1, seqID = seqID[u1]))
+   }
   u0 <- union(u0, u1)
   if (length(u0) > 0) {
     alleles <- alleles[-u0, ]
@@ -58,15 +61,14 @@ if (gform == "chip") {
   }
   
   write.csv(data.frame(seqID = seqID), "seqID.csv", row.names = FALSE)
-  if (gform == "uneak") 
-    AFrq <- genosin[[length(genosin)]]
+  if (gform == "uneak") AFrq <- genosin[[length(genosin)]]
   allelecounts <- colSums(alleles)
   RAcounts <- matrix(allelecounts, ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
   p <- RAcounts[, 1]/rowSums(RAcounts)  # p for ref allele - based on # reads, not on inferred # alleles
-  
   acountmin <- 1
   acountmax <- max(rowSums(RAcounts))
-}  #end GBS-specific
+  rm(genosin)
+ }  #end GBS-specific
 
 snpdepth <- colMeans(depth)
 uremove <- which(p == 0 | p == 1 | is.nan(p) | snpdepth < snpdepth.thresh)
@@ -76,16 +78,15 @@ if (length(uremove) > 0) {
   nsnps <- length(p)
   depth <- depth[, -uremove]
   if (gform == "chip") {
-    genon <- genon[, -uremove]
+   genon <- genon[, -uremove]
   } else {
     uremovea <- sort(c(2 * uremove, 2 * uremove - 1))  # allele positions
     RAcounts <- RAcounts[-uremove, ]
     alleles <- alleles[, -uremovea]
     allelecounts <- allelecounts[uremovea]
-    if (gform == "uneak") 
-      AFrq <- AFrq[-uremove]
+    if (gform == "uneak") AFrq <- AFrq[-uremove]
   }
-}
+ }
 
 cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
 
@@ -109,18 +110,18 @@ if (!gform == "chip") {
 ###### compare allele frequency estimates from allele counts and from genotype calls (& from input file, if uneak format)
 pg <- colMeans(genon, na.rm = T)/2  # allele freq assuming genotype calls
 png("AlleleFreq.png", width = 960, height = 960, pointsize = 18)
-p.lab <- "Allele frequency from allele counts"
-pg.lab <- "Allele frequency from genotype calls"
-AF.lab <- "Allele frequency given"
-if (gform == "uneak") pairs(cbind(pg, p, AFrq), col = "#80808020", pch = 16, cex = 0.8, labels = c(pg.lab, p.lab, AF.lab))
-if (gform == "Tassel") plot(pg ~ p, col = "#80808020", pch = 16, cex = 0.8, xlab = p.lab, ylab = pg.lab)
-dev.off()
+ p.lab <- "Allele frequency from allele counts"
+ pg.lab <- "Allele frequency from genotype calls"
+ AF.lab <- "Allele frequency given"
+ if (gform == "uneak") pairs(cbind(pg, p, AFrq), col = "#80808020", pch = 16, cex = 0.8, labels = c(pg.lab, p.lab, AF.lab))
+ if (gform != "uneak") plot(pg ~ p, col="#80808020", pch=16, cex=0.8, xlab=p.lab, ylab=pg.lab)
+ dev.off()
 
 
 # calc some overall snp stats
-naa <- colSums(genon == 2, na.rm = T)
-nab <- colSums(genon == 1, na.rm = T)
-nbb <- colSums(genon == 0, na.rm = T)
+naa <- colSums(genon == 2, na.rm = TRUE)
+nab <- colSums(genon == 1, na.rm = TRUE)
+nbb <- colSums(genon == 0, na.rm = TRUE)
 n1 = 2 * naa + nab
 n2 = nab + 2 * nbb
 n = n1 + n2  #n alleles
@@ -223,48 +224,41 @@ upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
 
 calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0) {
   # sfx is text to add to GGBS5 as graph name, puse is allele freqs (all snps) to use
-  if (missing(snpsubset)) 
-    snpsubset <- 1:nsnps
-  if (missing(indsubset)) 
-    indsubset <- 1:nind
-  if (missing(puse)) 
-    puse <- p
+  if (missing(snpsubset))   snpsubset <- 1:nsnps
+  if (missing(indsubset))   indsubset <- 1:nind
+  if (missing(puse))        puse <- p
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
   depthsub <- depth.orig[indsubset, snpsubset]
   cat("Calculating G matrix, analysis code:", sfx, "\n")
   cat("# SNPs: ", nsnpsub, "\n")
   cat("# individuals: ", nindsub, "\n")
-  if (nsnpsub < nsnps) {
-    # this is before any depth filter ... needs correcting
-    naa <- colSums(genon[indsubset, snpsubset] == 2, na.rm = T)
-    nab <- colSums(genon[indsubset, snpsubset] == 1, na.rm = T)
-    nbb <- colSums(genon[indsubset, snpsubset] == 0, na.rm = T)
+  genon0 <- genon[indsubset, snpsubset]
+  usegeno <- !is.na(genon[indsubset, snpsubset])
+  if (depth.min > 1 | depth.max < Inf) {
+    genon0[depth[indsubset, snpsubset] < depth.min] <- NA
+    genon0[depth[indsubset, snpsubset] > depth.max] <- NA
+    depthsub[depthsub < depth.min] <- 0
+    depthsub[depthsub > depth.max] <- 0
+    usegeno[depth[indsubset, snpsubset] < depth.min] <- FALSE
+    usegeno[depth[indsubset, snpsubset] > depth.max] <- FALSE
+    }
+  if (nsnpsub < nsnps | depth.min > 1 | depth.max < Inf) {
+    naa <- colSums(genon0[indsubset, snpsubset] == 2, na.rm = TRUE)
+    nab <- colSums(genon0[indsubset, snpsubset] == 1, na.rm = TRUE)
+    nbb <- colSums(genon0[indsubset, snpsubset] == 0, na.rm = TRUE)
     p1 = (naa + nab/2)/(naa + nab + nbb)
     maf <- ifelse(p1 > 0.5, 1 - p1, p1)
     png(paste0("MAF", sfx, ".png"))
     hist(maf, breaks = 50, xlab = "MAF", col = "grey")
     dev.off()
-  }
-  genon0 <- genon[indsubset, snpsubset] - rep.int(2 * puse[snpsubset], rep(nindsub, nsnpsub))
-  genon0[is.na(genon[indsubset, snpsubset])] <- 0
-  if (!gform == "chip") {
-    samples0 <- samples[indsubset, snpsubset] - rep.int(2 * puse[snpsubset], rep(nindsub, nsnpsub))
-    samples0[is.na(genon[indsubset, snpsubset])] <- 0
-  }
-  usegeno <- !is.na(genon[indsubset, snpsubset])
-  if (depth.min > 1 | depth.max < Inf) {
-    genon0[depth[indsubset, snpsubset] < depth.min] <- 0
-    genon0[depth[indsubset, snpsubset] > depth.max] <- 0
-    depthsub[depthsub < depth.min] <- 0
-    depthsub[depthsub > depth.max] <- 0
-    if (!gform == "chip") {
-      samples0[depth[indsubset, snpsubset] < depth.min] <- 0
-      samples0[depth[indsubset, snpsubset] > depth.max] <- 0
     }
-    usegeno[depth[indsubset, snpsubset] < depth.min] <- FALSE
-    usegeno[depth[indsubset, snpsubset] > depth.max] <- FALSE
-  }
+  if (!gform == "chip") {
+   samples0 <- samples[indsubset, snpsubset] - rep.int(2 * puse[snpsubset], rep(nindsub, nsnpsub))
+   samples0[is.na(genon0[indsubset, snpsubset])] <- 0
+   }
+  genon0 <- genon0 - rep.int(2 * puse[snpsubset], rep(nindsub, nsnpsub))
+  genon0[is.na(genon0[indsubset, snpsubset])] <- 0
   
   sampdepthsub <- rowMeans(depthsub)
   # depth0sub <- rowSums(depthsub==0) snpdepthsub <- colMeans(depthsub) snpdepthsub.non0 <- colSums(depthsub>0)/nrow(depthsub)
@@ -332,11 +326,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     cat("minimum eigenvalue: ", min(eval), "\n")  #check for +ve def
     if (npc > 2) {
       pdf(paste0("PCG5", sfx, ".pdf"))
-      pairs(PC$x[, 1:npc], cex = 0.6, label = paste(dimnames(PC$x)[[2]], round(eval, 3), sep = "\n")[1:npc], col = fcolo)
+      pairs(PC$x[,1:npc], cex=0.6, label=paste(dimnames(PC$x)[[2]],round(eval,3),sep="\n")[1:npc], col=fcolo[indsubset])
       dev.off()
     }
     png(paste0("PC1v2G5", sfx, ".png"), width = 640, height = 640, pointsize = 15)
-    plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = fcolo, , xlab = "Principal component 1", ylab = "Principal component 2")
+    plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = fcolo[indsubset], xlab = "Principal component 1", ylab = "Principal component 2")
     dev.off()
     list(G1 = GGBS1, G4d = diag(GGBS4), G5 = GGBS5, PC = PC)  # add G3=GGBS3, if needed
   } else {
