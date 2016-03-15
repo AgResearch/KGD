@@ -90,7 +90,7 @@ groupmatch <- function(Guse, partype) {
     allgmatch[, paste0("mmrate", partype)] <- mismatch.par(allgmatch$IndivID, allgmatch[, paste0("Best", partype, "Match")])
     png(paste0("Best", partype, "Matches.png"), width = 640, height = 640, pointsize = 15)
     plot(allgmatch[, paste0("mmrate", partype)] ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
-         ylab = "Raw mismatch rate")
+         ylab = "Raw mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)])
     dev.off()
     write.csv(allgmatch, paste0(partype, "Matches.csv"), row.names = FALSE)
     noffspringpar <- data.frame(table(allgmatch[, paste0("Best", partype, "Match")]))
