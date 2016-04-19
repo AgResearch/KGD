@@ -1,0 +1,97 @@
+#input: vcf file
+#output: RA (ReferenceAlternative) file, tab-delimited with columns, CHROM, POS, SAMPLES
+# where SAMPLES consists of colon-delimited sampleID, flowcellID, lane, seqlibID
+# CHROM   POS     999220:C4TWKACXX:7:56   999204:C4TWKACXX:7:56
+# 1       415     0,0     0,0
+# 1       443     1,0     9,0
+# 1       448     0,0     0,0
+#
+#filters: indels are removed, multiple alternative alleles are removed
+#./. is translated into 0,0
+
+#NB: Ammendments made by Rachael Ashby to vcf2ra.py script to allow for 'RO' and 'AO' values in a 
+#VCF file to be used in place of 'AD'
+#Date: 15/03/2016
+
+import sys, os
+
+##Should this be greater than?
+if len(sys.argv) < 2:
+	sys.exit('Usage: python %s vcf_file\n' % sys.argv[0])
+
+if not os.path.exists(sys.argv[1]):
+	sys.exit('ERROR: vcf_file \'%s\' was not found!\n' % sys.argv[1])
+
+infile = sys.argv[1]
+infh = open(infile)
+
+outfile = infile + '.ra.tab'
+ofh = open(outfile, "w")
+
+headerlist = ['CHROM', 'POS']
+line = infh.readline()
+snp_counter = 0
+
+while line:
+	line = line.strip()
+	outlist = []
+	annotlist = []
+	ad_pos = "" ##Needs to be defined so can check if the string is NULL
+	ro_pos = "" ##Needs to be defined so can check if the string is NULL
+	ao_pos = "" ##Needs to be defined so can check if the string is NULL
+	if line.startswith('##'):
+		pass
+	elif line.startswith("#CHROM"):
+		line = line.split()
+		headerlist += line[9:]
+		print >> ofh, '\t'.join(headerlist)
+		print "found", len(headerlist), "samples"
+	else:
+		line = line.split()
+		chrom = line[0]
+		outlist.append(chrom)
+		annotlist.append(chrom)
+		pos = line[1]
+		outlist.append(pos)
+		annotlist.append(pos)
+		ref = line[3]
+		alt = line[4]
+		if ref == '.' or alt == '.' or len(alt) > 1:	#filter out indels and multiple alternative alleles
+			pass
+		else:
+			format = line[8].split(':')
+			if "AD" in format:
+				ad_pos = format.index('AD')     #where is AD?
+			elif "RO" and "AO" in format:		#Added line here to look for RO and AO as well as AD. Could possibly combine with first if?
+				ro_pos = format.index('RO')	#Where is RO?
+				ao_pos = format.index('AO')	#Where is AO?
+								
+			else:
+				print "\nERROR: We can't use this vcf file. AD (Allelic Depth) or RO (Reference allele observation count) and AO (Alternate allele observation count) information is needed.\n"
+				sys.exit()
+			for i in line[9:]:
+				if (i == './.') or (i == '.,.') or (i == '.'):	#translate uncovered to 0,0. Added translations for '.,.' and '.' to allow for 
+										#VCF files with other formats
+					outlist.append('0,0')
+				else:
+					i = i.split(':')
+					if ad_pos or ad_pos==0:				#IF ad_pos is not null, i.e., there is a value for it, append it to outlist
+						if i[ad_pos] == '.,.':
+							outlist.append('0,0')
+						else:
+							outlist.append(i[ad_pos])
+					elif (ro_pos and ao_pos) or (ro_pos == 0 and ao_pos==0):	#ELSE IF ro_pos and ao_pos are not null or are equal to 0
+						ad = str(i[ro_pos]) + "," + str(i[ao_pos])	#Create a string of 'RO,AO', in the same format as AD.	
+						outlist.append(ad)
+					else:
+						##Should never really get here, but if AD, AO and RO are all null, it will break the script
+						print "\nERROR: Can't find either an Allele Depth (AD) or  RO (Reference allele observation count) and AO (Alternate allele observation count) at this position.\n"
+						sys.exit()
+			print >> ofh, '\t'.join(outlist)
+			snp_counter += 1
+	line = infh.readline()
+
+infh.close()
+ofh.close()
+
+print snp_counter, "SNPs written."
