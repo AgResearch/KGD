@@ -226,7 +226,7 @@ fcolo <- rep("black", nind)  # modify this to specify colours for individuals in
 
 upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
 
-calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0, calclevel = 9) {
+calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0, calclevel = 9, cocall.thresh = 0) {
   # sfx is text to add to GGBS5 as graph name, puse is allele freqs (all snps) to use
   # calclevel: 1: G5 only, 2: G5 + reports using G5, 3: all G, 9: all
   if (missing(snpsubset))   snpsubset <- 1:nsnps
@@ -248,6 +248,21 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     usegeno[depth[indsubset, snpsubset] < depth.min] <- FALSE
     usegeno[depth[indsubset, snpsubset] > depth.max] <- FALSE
     }
+  cocall <- tcrossprod(usegeno)
+  cat("Mean co-call rate (for sample pairs):", mean(upper.vec(cocall)/nsnpsub), "\n")
+  cat("Min  co-call rate (for sample pairs):", min(upper.vec(cocall)/nsnpsub), "\n")
+  png(paste0("Co-call-", sfx, ".png"))
+   hist(upper.vec(cocall)/nsnpsub, breaks = 50, xlab = "Co-call rate (for sample pairs)", main="", col = "grey")
+   dev.off()
+  lowpairs <- which(cocall/nsnpsub <= cocall.thresh & upper.tri(cocall),arr.ind=TRUE)
+  samp.removed <- NULL
+  while(nrow(lowpairs) > 0) {
+   lowsamptab <- table(as.vector(lowpairs))
+   lowsamp <- as.numeric(names(which.max(lowsamptab)))
+   samp.removed <- c(samp.removed,lowsamp)
+   lowpairs <- lowpairs[-(which(lowpairs[,1] == lowsamp | lowpairs[,2] == lowsamp)),,drop=FALSE]
+   }
+
   if ((nsnpsub < nsnps | depth.min > 1 | depth.max < Inf) & calclevel %in% c(2,9)) {
     naa <- colSums(genon0 == 2, na.rm = TRUE)
     nab <- colSums(genon0 == 1, na.rm = TRUE)
@@ -305,8 +320,14 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   if (nrow(uhirel) > 0 & nsnpsub >= 999) 
     write.csv(data.frame(Indiv1 = seqID[uhirel[, 1]], Indiv2 = seqID[uhirel[, 2]], G5rel = GGBS5[uhirel]), "HighRelatedness.csv", row.names = FALSE)
   if (npc >=0 ) {
+   # check for missing elements and subset to remove
+   pcasamps <- 1:nindsub
+   if(length(samp.removed) > 0) {
+    pcasamps <- pcasamps[-samp.removed]
+    cat("SeqIDs removed for PCA and/or heatmap\n"); print(seqID[indsubset][samp.removed])
+    }
    png(paste0("Heatmap-G5", sfx, ".png"), width = 2000, height = 2000, pointsize = 18)
-   temp <- sqrt(GGBS5 - min(GGBS5, na.rm = T))
+   temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = T))
    heatmap(temp, col = rev(heat.colors(50)))
    dev.off()
    }
@@ -331,7 +352,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    }
   if (npc > 0) {
     ### PCA analysis on GGBS5
-    PC <- svd(GGBS5 - matrix(colMeans(GGBS5), nrow = nindsub, ncol = nindsub, byrow = TRUE), nu = npc)
+    PC <- svd(GGBS5[pcasamps,pcasamps] - matrix(colMeans(GGBS5[pcasamps,pcasamps]), nrow = length(pcasamps), ncol = length(pcasamps), byrow = TRUE), nu = npc)
     eval <- PC$d^2/sum(PC$d^2)
     PC$x <- PC$u %*% diag(PC$d[1:npc])
     cat("minimum eigenvalue: ", min(eval), "\n")  #check for +ve def
@@ -343,9 +364,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     png(paste0("PC1v2G5", sfx, ".png"), width = 640, height = 640, pointsize = 15)
     plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = fcolo[indsubset], xlab = "Principal component 1", ylab = "Principal component 2")
     dev.off()
-    list(G1 = GGBS1, G4d = diag(GGBS4), G5 = GGBS5, PC = PC)  # add G3=GGBS3, if needed
+    list(G1 = GGBS1, G4d = diag(GGBS4), G5 = GGBS5, samp.removed = samp.removed, PC = PC)  # add G3=GGBS3, if needed
   } else {
-    list(G1 = GGBS1, G4d = diag(GGBS4), G5 = GGBS5)  # add G3=GGBS3, if needed
+    list(G1 = GGBS1, G4d = diag(GGBS4), G5 = GGBS5, samp.removed = samp.removed)  # add G3=GGBS3, if needed
   }
 }
 
