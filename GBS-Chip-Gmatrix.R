@@ -77,6 +77,7 @@ if (length(uremove) > 0) {
   p <- p[-uremove]
   nsnps <- length(p)
   depth <- depth[, -uremove]
+  SNP_Names <- SNP_Names[-uremove]
   if (gform == "chip") {
    genon <- genon[, -uremove]
   } else {

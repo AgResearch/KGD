@@ -12,4 +12,4 @@ GCheck <- "GHWdgm.05$G5"
 source("<source directory>/GBSPedAssign.R")
 
 #G5 <- GHWdgm.05$G5
-#save(G5,file="G5.RData")
+#save(G5,seqID,file="G5.RData")

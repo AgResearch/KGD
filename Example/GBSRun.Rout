@@ -19,6 +19,7 @@ Type 'q()' to quit R.
 
 > genofile <- "HapMap.hmc.txt.gz"
 > 
+> #source("<source directory>/GBS-Chip-Gmatrix.R")
 > source("/home/doddsk/GBS/Code/GBS-Chip-Gmatrix.R")
 Read 102 items
 Read 14709 records
@@ -29,6 +30,8 @@ Mean sample depth: 9.281431
 Calculating G matrix, analysis code:  
 # SNPs:  14709 
 # individuals:  96 
+Mean co-call rate (for sample pairs): 0.4780837 
+Min  co-call rate (for sample pairs): 0.002719423 
 Proportion of missing genotypes:  0.3640826 
 Mean sample depth: 9.281431 
 Mean self-relatedness (G5 diagonal): 1.215244 
@@ -36,6 +39,8 @@ Mean self-relatedness (G5 diagonal): 1.215244
 Calculating G matrix, analysis code: HWdgm.05 
 # SNPs:  11500 
 # individuals:  96 
+Mean co-call rate (for sample pairs): 0.3688646 
+Min  co-call rate (for sample pairs): 8.695652e-05 
 Proportion of missing genotypes:  0.445558 
 Mean sample depth: 4.348901 
 Mean self-relatedness (G5 diagonal): 1.577778 
@@ -46,6 +51,7 @@ minimum eigenvalue:  8.905638e-36
 > 
 > rel.thresh <- 0.2
 > GCheck <- "GHWdgm.05$G5"
+> #source("<source directory>/GBSPedAssign.R")
 > source("/home/doddsk/GBS/Code/GBSPedAssign.R")
 56 matches out of 78 Father comparisons: 71.8 %
 Mean relatedness for Father matches 0.26 
@@ -53,7 +59,7 @@ Mean relatedness for Father non-matches -0.0238
 51 matches out of 78 Mother comparisons: 65.4 %
 Mean relatedness for Mother matches 0.298 
 Mean relatedness for Mother non-matches 0.0181 
-Mean relatedness for full-sib families
+Mean relatedness for full-sib families (as given)
   famfathers fammothers noffspring   meanrel
 1         23          1         17 0.2286663
 2         47         24         18 0.2653806
@@ -67,4 +73,4 @@ Mean relatedness between individuals in full-sib families with different parents
 > 
 > proc.time()
    user  system elapsed 
- 31.823   0.371  14.732 
+ 40.876   0.389  18.619 
