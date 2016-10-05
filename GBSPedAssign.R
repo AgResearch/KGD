@@ -8,9 +8,9 @@ if (!exists("mindepth.mm")) mindepth.mm <- 5
 if (!exists("indsubset")) indsubset <- seq_along(seqID)
 if (!exists("snpsubset")) snpsubset <- seq(nsnps)
 
-panel.yeqx <- function(x,y,...){   #panel function for pairs with identity line added
-    points(x,y,...)
-    abline(a = 0,b = 1, col="red", ...)
+panel.yeqx <- function(x,y,col.points="black",col.line="red",...){   #panel function for pairs with identity line added
+    points(x,y,col=col.points,...)
+    abline(a = 0,b = 1, col=col.line, ...)
 }
 coordprop <- function(propn,crange) crange[1]+propn*diff(crange)  # function to find proportional positions on plots
 
@@ -223,7 +223,7 @@ if (exists("pedfile") & exists("GCheck")) {
       BothMatches$mmnumF2M2 <- mmstats$ncompare
       write.csv(BothMatches,"BothMatches.csv", row.names = FALSE)
       png("MMrateBoth.png", width = 640, height = 640, pointsize = 15)
-       with(BothMatches,pairs(cbind(mmrateF2M2,mmrateF1M2,mmrateF2M1,mmrateF1M1),upper.panel=panel.yeqx,lower.panel=NULL,col=fcolo))
+       with(BothMatches,pairs(cbind(mmrateF2M2,mmrateF1M2,mmrateF2M1,mmrateF1M1),upper.panel=panel.yeqx,lower.panel=NULL,col.points=fcolo))
        dev.off()
       }
      }
