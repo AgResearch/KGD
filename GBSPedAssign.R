@@ -223,7 +223,7 @@ if (exists("pedfile") & exists("GCheck")) {
       BothMatches$mmnumF2M2 <- mmstats$ncompare
       write.csv(BothMatches,"BothMatches.csv", row.names = FALSE)
       png("MMrateBoth.png", width = 640, height = 640, pointsize = 15)
-       with(BothMatches,pairs(cbind(mmrateF2M2,mmrateF1M2,mmrateF2M1,mmrateF1M1),upper.panel=panel.yeqx,lower.panel=NULL,col.points=fcolo[indsubset]))
+       with(BothMatches,pairs(cbind(mmrateF2M2,mmrateF1M2,mmrateF2M1,mmrateF1M1),upper.panel=panel.yeqx,lower.panel=NULL,col.points=fcolo[match(BothMatches$seqID,seqID)]))
        dev.off()
       }
      }
