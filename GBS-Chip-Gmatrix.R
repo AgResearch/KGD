@@ -6,6 +6,7 @@ if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
 if (!exists("sampdepth.thresh")) sampdepth.thresh <- 0.01
 if (!exists("snpdepth.thresh"))  snpdepth.thresh  <- 0.01
 if (!exists("hirel.thresh"))     hirel.thresh     <- 0.9
+if (!exists("cex.pointsize"))    cex.pointsize    <- 1
 
 
 if (gform == "chip") {
@@ -109,8 +110,8 @@ if (!gform == "chip") {
 }
 
 ###### compare allele frequency estimates from allele counts and from genotype calls (& from input file, if uneak format)
-pg <- colMeans(genon, na.rm = T)/2  # allele freq assuming genotype calls
-png("AlleleFreq.png", width = 960, height = 960, pointsize = 18)
+pg <- colMeans(genon, na.rm = TRUE)/2  # allele freq assuming genotype calls
+png("AlleleFreq.png", width = 960, height = 960, pointsize = cex.pointsize *  18)
  p.lab <- "Allele frequency from allele counts"
  pg.lab <- "Allele frequency from genotype calls"
  AF.lab <- "Allele frequency given"
@@ -144,10 +145,10 @@ cat("Proportion of missing genotypes: ", sum(depth == 0)/nrow(depth)/ncol(depth)
 
 callrate <- 1 - rowSums(depth == 0)/nsnps  # after removing SNPs, samples 
 SNPcallrate <- 1 - colSums(depth == 0)/nind  
-png("CallRate.png", width = 480, height = 480)
+png("CallRate.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
  hist(callrate, 50, col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of sample call rates", xlab = "Call rate (proportion of SNPs scored)")
  dev.off()
-png("SNPCallRate.png", width = 480, height = 480)
+png("SNPCallRate.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
  # suggested by Jaroslav Klapste (Scion) 
  hist(SNPcallrate, 50, col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of SNP call rates", xlab = "Call rate (proportion of samples scored)")
  dev.off()
@@ -157,22 +158,22 @@ if (!gform == "chip") {
   write.csv(data.frame(seqID, callrate, sampdepth), "SampleStats.csv", row.names = FALSE)
   sampdepth.scored <- sampdepth * nsnps/(nsnps - depth0)
   cat("Mean sample depth:", mean(sampdepth), "\n")
-  png("SampDepth.png", width = 480, height = 480)
+  png("SampDepth.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
    plot(sampdepth ~ sampdepth.med, col = "#80808080", pch = 16, cex = 1.2, main = "Sample Depth", xlab = "Median", ylab = "Mean")
    dev.off()
-  png("SampDepth-scored.png", width = 480, height = 480)
+  png("SampDepth-scored.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
    plot(sampdepth.scored ~ sampdepth, col = "#80808080", pch = 16, cex = 1.2, main = "Sample Depth", xlab = "Mean", ylab = "Mean with depth>0")
    dev.off()
-  png("SampDepthHist.png", width = 480, height = 480)
+  png("SampDepthHist.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
    hist(sampdepth, 100, col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of mean sample depth", xlab = "Mean sample depth")
    dev.off()
-  png("SampDepthCR.png", width = 480, height = 480)
+  png("SampDepthCR.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
    plot(sampdepth ~ callrate, col = "#80808080", pch = 16, cex = 1.2, main = "Sample Depth v Call rate", xlab = "Sample call rate", ylab = "Mean sample depth")
    dev.off()
-  png("SNPDepthHist.png", width = 480, height = 480)
+  png("SNPDepthHist.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
    hist(snpdepth, 100, col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of mean SNP depth", xlab = "Mean SNP depth")
    dev.off()
-  png("SNPDepth.png", width = 480, height = 480)
+  png("SNPDepth.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
    plot(SNPcallrate ~ snpdepth, col = "#80808080", pch = 16, cex = 1.2, main = "SNP Depth", ylab = "SNP Call rate (proportion of samples scored)", 
         xlab = "Mean SNP depth")
    dev.off()
@@ -188,7 +189,7 @@ mindepthplot <- 0.1
 maxdepthplot <- 256
 maxtrans <- depthtrans(maxdepthplot)
 legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol = 1))
-png("finplot.png", width = 640, height = 640, pointsize = 15)
+png("finplot.png", width = 960, height = 960, pointsize = cex.pointsize *  18)
 plot(HWdis ~ maf, col = finpalette[depthtrans(pmax(mindepthplot, pmin(snpdepth, maxdepthplot)))], cex = 0.8, xlim = c(0, 0.5), xlab = "MAF", 
      ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5)
 rasterImage(legend_image, 0.05, -0.2, 0.07, -0.1)
@@ -201,7 +202,7 @@ sigpoints <- c(0.5, 5, 50, 100)  # legend points
 transpoints <- sigtrans(sigpoints)
 maxtrans <- sigtrans(max(l10LRT))
 legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol = 1))
-png("HWdisMAFsig.png", width = 640, height = 640, pointsize = 15)
+png("HWdisMAFsig.png", width = 640, height = 640, pointsize = cex.pointsize *  15)
 plot(HWdis ~ maf, col = finpalette[sigtrans(l10LRT)], cex = 0.8, xlim = c(0, 0.5), xlab = "MAF", ylab = "Hardy-Weinberg disequilibrium", 
      cex.lab = 1.5)
 rasterImage(legend_image, 0.05, -0.2, 0.07, -0.1)
@@ -209,15 +210,15 @@ text(x = 0.1, y = -0.2 + 0.1 * transpoints/maxtrans, labels = format(sigpoints))
 text(x = 0.075, y = -0.075, labels = "log10 LRT", cex = 1.2)
 dev.off()
 
-png("LRT-QQ.png", width = 480, height = 480)
+png("LRT-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
 qqplot(qchisq(ppoints(nsnps), df = 1), LRT, main = "Hardy-Weinberg LRT Q-Q Plot", xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), 
        ylab = "Sample Quantiles")
 dev.off()
-png("LRT-hist.png", width = 480, height = 480)
+png("LRT-hist.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
 hist(LRT, breaks = 50, col = "grey", xlab = "Hardy Weinberg likelihood ratio test statistic")
 dev.off()
 
-png("MAF.png")
+png("MAF.png", pointsize = cex.pointsize * 12)
 hist(maf, breaks = 50, xlab = "MAF", col = "grey")
 dev.off()
 
@@ -225,7 +226,43 @@ depth.orig <- depth  # see next, but actually need original depths for plots, su
 depth[depth < 2] <- 1.1  # not using depth values <2 after this so set to >1 to avoid 0 divisor note do not use depth.max <2 though
 fcolo <- rep("black", nind)  # modify this to specify colours for individuals in the plots
 
+################## functions
+ depth2K <- function(depthvals)  1/2^depthvals   # convert depth to K value assuming binomial 
+
+ depth2Kbb <- function(depthvals, alph=Inf) {
+  # convert depth to K value assuming beta-binomial with parameters alpha=beta=alph. Inf gives binomial
+  if (alph==Inf) 1/2^depthvals else beta(alph,depthvals+alph)/beta(alph,alph)
+  }
+
+# convert depth to K value modp model. prob of seeing same allele as last time is modp (usually >= 0.5)
+ depth2Kmodp <- function(depthvals, modp=0.5 ) {
+  Kvals <- 0.5*modp^(depthvals-1)
+  Kvals[which(depthvals==0)] <- 1
+  Kvals
+  }
+
+depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine depth2K
+ if (!dmodel=="modp") dmodel <- "bb"
+ if (missing(param) & dmodel=="bb") param <- Inf
+ if (missing(param) & dmodel=="modp") param <- 0.5
+ if (dmodel=="bb") depth2K <- function(depthvals) depth2Kbb(depthvals,alph=param)
+ if (dmodel=="modp") depth2K <- function(depthvals) depth2Kmodp(depthvals,modp=param)
+ depth2K
+ }
+
+
 upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
+
+calcp <- function(indsubset, pmethod="A") {
+ if(!pmethod == "G") pmethod <- "A"
+ if (missing(indsubset))   indsubset <- 1:nind
+ if (pmethod == "A") {
+  RAcountstemp <- matrix(colSums(alleles[indsubset,]), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
+  afreqs <- RAcountstemp[, 1]/rowSums(RAcountstemp)  # p for ref allele - based on # reads, not on inferred # alleles
+  }
+ if (pmethod == "G") afreqs <- colMeans(genon[indsubset,], na.rm = TRUE)/2  # allele freq assuming genotype calls
+ afreqs
+ }
 
 calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0, calclevel = 9, cocall.thresh = 0) {
   # sfx is text to add to GGBS5 as graph name, puse is allele freqs (all snps) to use
@@ -252,7 +289,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   cocall <- tcrossprod(usegeno)
   cat("Mean co-call rate (for sample pairs):", mean(upper.vec(cocall)/nsnpsub), "\n")
   cat("Min  co-call rate (for sample pairs):", min(upper.vec(cocall)/nsnpsub), "\n")
-  png(paste0("Co-call-", sfx, ".png"))
+  png(paste0("Co-call-", sfx, ".png"), pointsize = cex.pointsize * 12)
    hist(upper.vec(cocall)/nsnpsub, breaks = 50, xlab = "Co-call rate (for sample pairs)", main="", col = "grey")
    dev.off()
   lowpairs <- which(cocall/nsnpsub <= cocall.thresh & upper.tri(cocall),arr.ind=TRUE)
@@ -270,7 +307,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     nbb <- colSums(genon0 == 0, na.rm = TRUE)
     p1 = (naa + nab/2)/(naa + nab + nbb)
     maf <- ifelse(p1 > 0.5, 1 - p1, p1)
-    png(paste0("MAF", sfx, ".png"))
+    png(paste0("MAF", sfx, ".png"), pointsize = cex.pointsize * 12)
     hist(maf, breaks = 50, xlab = "MAF", col = "grey")
     dev.off()
     }
@@ -312,7 +349,8 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   P0[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
   P1[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
   div0 <- 2 * tcrossprod(P0, P1)
-  GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2/2^depth[indsubset, snpsubset]))/(1 - 2/2^depth[indsubset, snpsubset]))/diag(div0)
+#old (delete if new OK)  GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2/2^depth[indsubset, snpsubset]))/(1 - 2/2^depth[indsubset, snpsubset]))/diag(div0)
+  GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*depth2K(depth[indsubset, snpsubset])))/(1 - 2*depth2K(depth[indsubset, snpsubset])))/diag(div0)
   GGBS5 <- GGBS4
   diag(GGBS5) <- GGBS5d
   cat("Mean self-relatedness (G5 diagonal):", mean(GGBS5d), "\n")
@@ -327,23 +365,23 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     pcasamps <- pcasamps[-samp.removed]
     cat("SeqIDs removed for PCA and/or heatmap\n"); print(seqID[indsubset][samp.removed])
     }
-   png(paste0("Heatmap-G5", sfx, ".png"), width = 2000, height = 2000, pointsize = 18)
+   png(paste0("Heatmap-G5", sfx, ".png"), width = 2000, height = 2000, pointsize = cex.pointsize *  18)
    temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = T))
    heatmap(temp, col = rev(heat.colors(50)))
    dev.off()
    }
   if (calclevel %in% c(2,9)) {
-   png(paste0("G", sfx, "-diag.png"), width = 480, height = 480)
+   png(paste0("G", sfx, "-diag.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
     plot(diag(GGBS4) ~ diag(GGBS5), col = fcolo[indsubset], main = "Self-relatedness estimates", xlab = "Using G5", ylab = "Using G4")
     dev.off()
    }
   if (!gform == "chip") {
-    png(paste0("G", sfx, "diagdepth.png"), width = 480, height = 480)
+    png(paste0("G", sfx, "diagdepth.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
     plot(diag(GGBS5) ~ log(sampdepthsub + 1), col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth (log(x)+1)")
     dev.off()
   }
   if (calclevel %in% c(2,9)) {
-   png(paste0("Gcompare", sfx, ".png"), width = 960, height = 960, pointsize = 18)
+   png(paste0("Gcompare", sfx, ".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
    if (gform == "chip") 
      plot(upper.vec(GGBS1) ~ upper.vec(GGBS5), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", xlab = "Using G5", ylab = "Using G1")
    if (!gform == "chip" & calclevel > 2)  
@@ -358,11 +396,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     PC$x <- PC$u %*% diag(PC$d[1:npc])
     cat("minimum eigenvalue: ", min(eval), "\n")  #check for +ve def
     if (npc > 2) {
-      pdf(paste0("PCG5", sfx, ".pdf"))
+      pdf(paste0("PCG5", sfx, ".pdf"), pointsize = cex.pointsize * 12)
       pairs(PC$x[,1:npc], cex=0.6, label=paste(dimnames(PC$x)[[2]],round(eval,3),sep="\n")[1:npc], col=fcolo[indsubset])
       dev.off()
     }
-    png(paste0("PC1v2G5", sfx, ".png"), width = 640, height = 640, pointsize = 15)
+    png(paste0("PC1v2G5", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
     plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = fcolo[indsubset], xlab = "Principal component 1", ylab = "Principal component 2")
     dev.off()
     list(G1 = GGBS1, G4d = diag(GGBS4), G5 = GGBS5, samp.removed = samp.removed, PC = PC)  # add G3=GGBS3, if needed
