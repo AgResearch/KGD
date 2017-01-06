@@ -1,5 +1,5 @@
 #!/bin/echo Source me don't execute me 
-
+#prevent fails when NA in self-relatedness & doing PCA and/or heatmaps
 
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -253,6 +253,25 @@ depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine de
 
 upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
 
+posCreport <- function(mergeIDs,Guse) {
+ cat("Positive Control Checks (also see posCreport.csv)\n")
+ seqIDtemp <- seqID
+ multiIDs <- unique(mergeIDs[which(duplicated(mergeIDs))])
+ posCstats <- data.frame(mergeID=character(0),nresults=integer(0),selfrel=numeric(0),meanrel=numeric(0),minrel=numeric(0))
+ for (i in seq_along(multiIDs)) {
+  thisID <- multiIDs[i]
+  thispos <- which(mergeIDs==thisID)
+  thisG <- Guse[thispos,thispos]
+  selfrel <- mean(diag(thisG))
+  meanrel <- mean(upper.vec(thisG))
+  minrel <- min(upper.vec(thisG))
+  posCstats <- rbind(posCstats, data.frame(mergeID=thisID,nresults=length(thispos),selfrel=selfrel,meanrel=meanrel,minrel=minrel))
+  ulorel <- which(thisG <= hirel.thresh & upper.tri(thisG), arr.ind = TRUE)
+  if (nrow(ulorel) > 0) print(data.frame(Indiv1 = seqIDtemp[thispos[ulorel[, 1]]], Indiv2 = seqIDtemp[thispos[ulorel[, 2]]], rel = thisG[ulorel]))
+  }
+ write.csv(posCstats,"posCreport.csv",row.names=FALSE,quote=FALSE)
+ }
+
 calcp <- function(indsubset, pmethod="A") {
  if(!pmethod == "G") pmethod <- "A"
  if (missing(indsubset))   indsubset <- 1:nind
@@ -293,7 +312,12 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    hist(upper.vec(cocall)/nsnpsub, breaks = 50, xlab = "Co-call rate (for sample pairs)", main="", col = "grey")
    dev.off()
   lowpairs <- which(cocall/nsnpsub <= cocall.thresh & upper.tri(cocall),arr.ind=TRUE)
+  sampdepth.max <- apply(depthsub, 1, max)
   samp.removed <- NULL
+  if(cocall.thresh >= 0) {  # remove samples which wont get self-rel
+   samp.removed <- which(sampdepth.max < 2)
+   lowpairs <- lowpairs[-(which(lowpairs[,1] %in% samp.removed | lowpairs[,2] %in% samp.removed)),,drop=FALSE]
+   }   
   while(nrow(lowpairs) > 0) {
    lowsamptab <- table(as.vector(lowpairs))
    lowsamp <- as.numeric(names(which.max(lowsamptab)))
@@ -357,7 +381,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   
   uhirel <- which(GGBS5 > hirel.thresh & upper.tri(GGBS5), arr.ind = TRUE)
   if (nrow(uhirel) > 0 & nsnpsub >= 999) 
-    write.csv(data.frame(Indiv1 = seqID[uhirel[, 1]], Indiv2 = seqID[uhirel[, 2]], G5rel = GGBS5[uhirel]), "HighRelatedness.csv", row.names = FALSE)
+    write.csv(data.frame(Indiv1 = seqID[uhirel[, 1]], Indiv2 = seqID[uhirel[, 2]], G5rel = GGBS5[uhirel]), paste0("HighRelatedness", sfx, ".csv"), row.names = FALSE)
   if (npc >=0 ) {
    # check for missing elements and subset to remove
    pcasamps <- 1:nindsub
