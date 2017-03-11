@@ -132,7 +132,7 @@ parmatch <- function(partype, Gmatrix) {
 bestmatch <- function(ospos, parpos, Guse, partype) {
   if (missing(partype)) 
     partype <- "Par"
-  parchk <- Guse[ospos, parpos]
+  parchk <- Guse[ospos, parpos,drop=FALSE]
   maxpos <- apply(parchk, 1, which.max)
   parchktemp <- parchk
   parchktemp[cbind(1:nrow(parchk), maxpos)] <- -1
@@ -240,6 +240,7 @@ groupmatch <- function(Guse, partype) {
      plot(EMMrate ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
          ylab = "Excess mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8)
      abline(v=rel.thresh, col="grey")
+     abline(h=emm.thresh, col="grey")
      dev.off()
     tempch <- assign.pch[match(tempAssign,assign.rank)]
     png(paste0("ExpMM-", partype, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
@@ -260,8 +261,8 @@ groupmatch <- function(Guse, partype) {
      abline(v=rel.thresh, col="grey")
      abline(h=rel.thresh, col="grey")
      rasterImage(legend_image, coordprop(0.05,xyrange), coordprop(0.7,xyrange), coordprop(0.1,xyrange), coordprop(0.9,xyrange))
-     text(x=coordprop(0.11,xyrange),y=coordprop(0.7,xyrange),signif(min(allgmatch[, paste0("mmrate", partype)],na.rm=TRUE),2),pos=4,cex=0.8)
-     text(x=coordprop(0.11,xyrange),y=coordprop(0.9,xyrange),signif(max(allgmatch[, paste0("mmrate", partype)],na.rm=TRUE),2),pos=4,cex=0.8)
+     text(x=coordprop(0.11,xyrange),y=coordprop(0.7,xyrange),signif(min(EMMrate,na.rm=TRUE),2),pos=4,cex=0.8)
+     text(x=coordprop(0.11,xyrange),y=coordprop(0.9,xyrange),signif(max(EMMrate,na.rm=TRUE),2),pos=4,cex=0.8)
      text(x=coordprop(0,xyrange),y=coordprop(0.95,xyrange),"Excess MM rate best",pos=4,cex=0.8)
      dev.off()
     write.csv(allgmatch, paste0(partype, "Matches.csv"), row.names = FALSE)
@@ -333,6 +334,7 @@ if (exists("pedfile") & exists("GCheck")) {
     assign.rank <- c("Y","I","B","A","E","F","M","N")
     assign.pch <- c(16,2,6,1,15,13,13,4)
     groupsinfo <- read.csv(groupsfile, stringsAsFactors = FALSE)
+    groupsinfo <- groupsinfo[!duplicated(groupsinfo),]  # remove row duplicates
     if ("FatherGroup" %in% colnames(pedinfo)) 
       FatherMatches <- groupmatch(eval(parse(text = GCheck)), "Father")
     if ("MotherGroup" %in% colnames(pedinfo)) 
@@ -415,6 +417,7 @@ if (exists("pedfile") & exists("GCheck")) {
        pairs(EMMrates, main="Excess Mismatch Rates", labels=c("Father2,\nMother2","Father1,\nMother2","Father2,\nMother1","Father1,\nMother1"),
                   upper.panel=panel.yeqx,lower.panel=NULL,col.points=fcolo[uo],pch=plotch)
        dev.off()
+      table(BothMatches$BothAssign)
       }
      }
   }
