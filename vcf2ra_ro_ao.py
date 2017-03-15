@@ -39,6 +39,7 @@ while line:
 	ad_pos = "" ##Needs to be defined so can check if the string is NULL
 	ro_pos = "" ##Needs to be defined so can check if the string is NULL
 	ao_pos = "" ##Needs to be defined so can check if the string is NULL
+        empty_genotypes = ['./.', '.,.', '.', '.|.']
 	if line.startswith('##'):
 		pass
 	elif line.startswith("#CHROM"):
@@ -70,13 +71,13 @@ while line:
 				print "\nERROR: We can't use this vcf file. AD (Allelic Depth) or RO (Reference allele observation count) and AO (Alternate allele observation count) information is needed.\n"
 				sys.exit()
 			for i in line[9:]:
-				if (i == './.') or (i == '.,.') or (i == '.'):	#translate uncovered to 0,0. Added translations for '.,.' and '.' to allow for 
-										#VCF files with other formats
+				if i in empty_genotypes:	#translate uncovered to 0,0. Added translations for '.,.' and '.' to allow for
+                                                                #VCF files with other formats
 					outlist.append('0,0')
 				else:
 					i = i.split(':')
 					if ad_pos or ad_pos==0:				#IF ad_pos is not null, i.e., there is a value for it, append it to outlist
-						if i[ad_pos] == '.,.':
+						if i[ad_pos] in empty_genotypes:        #gatk vcf4.2 will fill out genotype fields, even for uncovered data
 							outlist.append('0,0')
 						else:
 							outlist.append(i[ad_pos])
