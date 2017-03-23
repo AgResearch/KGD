@@ -505,5 +505,41 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   }
 }
 
+
+writeG <- function(Guse, outname, outtype=0, indsubset,IDuse ) { # IDuse is for only those samples in Guse
+ if (missing(indsubset))   indsubset <- 1:nrow(Guse)
+ if (missing(outname))   outname <- "GBS-Gmatrix"
+ seqID <- seqID[indsubset]
+ IDname <- as.character(substitute(IDuse))
+ if (missing(IDuse))  { IDuse <- seqID; IDname <- "seqID" }
+ if(1 %in% outtype) {
+  savelist <- list(Guse=Guse,seqID=seqID)
+  Gname <- deparse(substitute(Guse))
+  charpos <- regexpr("[",Gname,fixed=TRUE) ; if (charpos>0) Gname <- substr(Gname,1,charpos-1)
+  charpos <- regexpr("$",Gname,fixed=TRUE) ; if (charpos>0) Gname <- substr(Gname,charpos+1,nchar(Gname))
+  names(savelist)[1] <- Gname
+  save(list=names(savelist),file= paste0(outname,".RData"), envir=list2env(savelist))
+  }
+ if(2 %in% outtype) {
+  colnames(Guse) <- IDuse
+  Gout <- cbind(IDuse, Guse)
+  colnames(Gout)[1] <- IDname
+  write.csv(Gout, paste0(outname,".csv"),row.names=FALSE,quote=FALSE)
+  }
+ if(3 %in% outtype) {
+  upperRel <- upper.vec(Guse)
+  ID1 <- upper.vec(matrix(IDuse,nrow=length(IDuse),ncol=length(IDuse),byrow=FALSE))
+  ID2 <- upper.vec(matrix(IDuse,nrow=length(IDuse),ncol=length(IDuse),byrow=TRUE))
+  df.out <- data.frame(ID1=ID1,ID2=ID2,rel=upperRel)
+  write.csv(df.out,paste0(outname,"-long.csv"),row.names=FALSE,quote=FALSE)
+  }
+ if(4 %in% outtype) {
+  Inbreeding <- diag(Guse) - 1
+  Gout <- cbind(IDuse,Inbreeding)
+  colnames(Gout)[1] <- IDname
+  write.csv(Gout, paste0(outname,"-Inbreeding.csv"),row.names=FALSE,quote=FALSE)
+  }
+}
+
 # example calls Gfull <- calcG(npc=4) GHWdgm.05 <- calcG(which(HWdis > -0.05),'HWdgm.05') # recalculate using Hardy-Weinberg
 # disequilibrium cut-off at -0.05
