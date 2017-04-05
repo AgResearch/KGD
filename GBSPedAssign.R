@@ -1,8 +1,7 @@
 #!/bin/echo Source me don't execute me 
 
-
 # assume all in pedfile are in the genotype results. To do: remove those that are not
-
+OK4ped <- TRUE
 if (!exists("rel.thresh"))   rel.thresh  <- 0.4
 if (!exists("emm.thresh"))   emm.thresh  <- 0.01           # Excess for single parent match
 if (!exists("emm.thresh2"))  emm.thresh2 <- 2*emm.thresh   # Excess for parent-pair match
@@ -28,7 +27,10 @@ cat("Parentage parameter settings\n----------------------------\n rel.thresh\t",
     "\n nboot\t\t",nboot,
     "\n boot.thresh\t",boot.thresh," (relatedness difference to invoke bootstrapping)",
     "\n")
-
+if(length(indusbset) != nrow(eval(parse(text = GCheck))) {
+ OK4ped <- FALSE
+ cat("Number of individuals",length(indsubset),"does not match G matrix",nrow(eval(parse(text = GCheck)),"\n")
+ } 
 
 panel.yeqx <- function(x,y,col.points="black",col.line="red",...){   #panel function for pairs with identity line added
     points(x,y,col=col.points,...)
@@ -176,6 +178,8 @@ groupmatch <- function(Guse, partype) {
     mmstats <- mismatch.par(allgmatch$IndivID, allgmatch[, paste0(partype, "Match2nd")])
     allgmatch[, paste0("mmrate", partype,"2")] <- mmstats$mmrate
     allgmatch[, paste0("exp.mmrate", partype,"2")] <- mmstats$exp.mmrate
+    EMMrate <- allgmatch[, paste0("mmrate", partype)] - allgmatch[, paste0("exp.mmrate", partype)]
+    EMMrate2 <- allgmatch[, paste0("mmrate", partype, "2")] - allgmatch[, paste0("exp.mmrate", partype, "2")] 
     ### bootstrap section
     bootpos <- which(allgmatch[,paste0(partype, "rel")] > rel.thresh & allgmatch[,paste0(partype, "rel")] - allgmatch[,paste0(partype, "rel2nd")] < boot.thresh)
     nsnpsub <- length(snpsubset)
@@ -225,11 +229,12 @@ groupmatch <- function(Guse, partype) {
       }
      } #bootpos
     ### end of bootstrap section
-    EMMrate <- allgmatch[, paste0("mmrate", partype)] - allgmatch[, paste0("exp.mmrate", partype)]
     tempAssign <- rep("Y",nrow(allgmatch))
     if(length(bootpos) > 0) tempAssign[which(allgmatch[,paste0(partype,"Reliability")] < boota.thresh )] <- "B"
     tempAssign[which(EMMrate > emm.thresh)] <- "E"
     tempAssign[which(allgmatch[, paste0(partype, "rel")] < rel.thresh)] <- "N"
+     # for E assigns, check if the 2nd parent is possible.  
+    tempAssign[which(allgmatch[, paste0(partype, "rel2nd")] >= rel.thresh & EMMrate2 < emm.thresh & tempAssign == "E")] <- "A"
     allgmatch[, paste0(partype, "Assign")] <- tempAssign
     png(paste0("Best", partype, "Matches.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
      plot(allgmatch[, paste0("mmrate", partype)] ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
@@ -249,6 +254,7 @@ groupmatch <- function(Guse, partype) {
      pch.used <- sort(match(unique(tempAssign),assign.rank))
      legend("bottomright",title="Assign",cex=0.75,pch=assign.pch[pch.used],legend=assign.rank[pch.used])
      abline(a=0,b=1,col="red")
+     abline(a=emm.thresh,b=1,col="grey")
      dev.off()
     mmpalette <- colorRampPalette(c("blue","red"))(50)
     mmcol <- mmpalette[trunc(1+50*(EMMrate-min(EMMrate,na.rm=TRUE))/(diff(range(EMMrate,na.rm=TRUE))+1E-6))]
@@ -276,8 +282,8 @@ groupmatch <- function(Guse, partype) {
   }
 }
 
-if (exists("pedfile") & exists("GCheck")) {
-  pedinfo <- read.csv(pedfile, stringsAsFactors = FALSE)
+if (OK4ped & exists("pedfile") & exists("GCheck")) {
+  pedinfo <- read.csv(pedfile, stringsAsFactors = FALSE, colClasses=c(FatherGroup="character", MotherGroup="character"))
   pedinfo <- pedinfo[!is.na(pedinfo$seqID), ]
   pedinfo <- pedinfo[!is.na(match(pedinfo$seqID, seqID[indsubset])), ]
   dupids <- which(duplicated(pedinfo$IndivID))
@@ -333,8 +339,9 @@ if (exists("pedfile") & exists("GCheck")) {
   if (exists("groupsfile")) {
     assign.rank <- c("Y","I","B","A","E","F","M","N")
     assign.pch <- c(16,2,6,1,15,13,13,4)
-    groupsinfo <- read.csv(groupsfile, stringsAsFactors = FALSE)
+    groupsinfo <- read.csv(groupsfile, stringsAsFactors = FALSE, colClasses=(ParGroup="character"))
     groupsinfo <- groupsinfo[!duplicated(groupsinfo),]  # remove row duplicates
+    groupsinfo$Genotyped <- ifelse(is.na(match(pedinfo$seqID[match(groupsinfo$IndivID,pedinfo$IndivID)],seqID)),"N","Y")
     if ("FatherGroup" %in% colnames(pedinfo)) 
       FatherMatches <- groupmatch(eval(parse(text = GCheck)), "Father")
     if ("MotherGroup" %in% colnames(pedinfo)) 
@@ -379,15 +386,26 @@ if (exists("pedfile") & exists("GCheck")) {
       EMMrates <- with(BothMatches,cbind(mmrateF2M2-exp.mmrateF2M2,mmrateF1M2-exp.mmrateF1M2,mmrateF2M1-exp.mmrateF2M1,mmrateF1M1-exp.mmrateF1M1))
       EMMrate.min <- apply(EMMrates, MARGIN=1, min)
       BothMatches$BothAssign[which(EMMrates[,4] > emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:4])] <- "E"
-      BothMatches$BothAssign[which(EMMrates[,4]-EMMrate.min > emmdiff.thresh2 & BothMatches$BothAssign %in% assign.rank[1:5])] <- "A"
+      BothMatches$BothAssign[EMMrates[,4]-EMMrate.min > emmdiff.thresh2 & EMMrate.min > emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:5]] <- "A"
       BothMatches$BothAssign[which(BothMatches$relF1M1 - BothMatches$Inb > inb.thresh & BothMatches$BothAssign == "Y")] <- "I"
       BothMatches$BothAssign[which(BothMatches$FatherAssign == "Y" & BothMatches$BothAssign == "N")] <- "F"
       BothMatches$BothAssign[which(BothMatches$MotherAssign == "Y" & BothMatches$BothAssign == "N")] <- "M"
+      BothMatches$BothAssign[which(BothMatches$FatherAssign == "Y" & BothMatches$BothAssign == "E" & BothMatches$MotherAssign == "E")] <- "F"
+      BothMatches$BothAssign[which(BothMatches$MotherAssign == "Y" & BothMatches$BothAssign == "E" & BothMatches$FatherAssign == "E")] <- "M"
+
       BothMatches$Alternate <- ""
       Apos <- which(BothMatches$BothAssign=="A")
       for (ipos in Apos) {
        altpar = c("F2M2","F1M2","F2M1")[which(EMMrates[ipos,] == EMMrate.min[ipos])]
-       if (BothMatches[ipos,paste0("rel",altpar)] - BothMatches$Inb[ipos] <= inb.thresh & EMMrate.min[ipos] <= emm.thresh2) BothMatches$Alternate[ipos] <- altpar
+       altOK <- TRUE
+       if (BothMatches[ipos,paste0("rel",altpar)] - BothMatches$Inb[ipos] > inb.thresh | EMMrate.min[ipos] > emm.thresh2) altOK <- FALSE
+       if (grepl("F2",altpar)) {
+        if(BothMatches[ipos, "Fatherrel2nd"] < rel.thresh | BothMatches[ipos, "mmrateFather2"] - BothMatches[ipos, "exp.mmrateFather2"] > emm.thresh ) altOK <- FALSE
+        }
+       if (grepl("M2",altpar)) {
+        if(BothMatches[ipos, "Motherrel2nd"] < rel.thresh | BothMatches[ipos, "mmrateMother2"] - BothMatches[ipos, "exp.mmrateMother2"] > emm.thresh ) altOK <- FALSE
+        }
+       if(altOK) BothMatches$Alternate[ipos] <- altpar
        }
       write.csv(BothMatches,"BothMatches.csv", row.names = FALSE)
       uo <- match(BothMatches$seqID,seqID)
@@ -405,6 +423,7 @@ if (exists("pedfile") & exists("GCheck")) {
        plot(mmrateF1M1 ~ exp.mmrateF1M1, data=BothMatches, main = paste("Best Parent Matches"), xlab = "Expected mismatch rate", 
            ylab = "Raw mismatch rate",col=fcolo[uo], pch=plotch, cex=0.8)
        abline(a=0,b=1,col="red")
+       abline(a=emm.thresh2,b=1,col="grey")
        pch.used <- sort(match(unique(BothMatches$BothAssign),assign.rank))
        legend("bottomright",title="Assign",cex=0.75,pch=assign.pch[pch.used],legend=assign.rank[pch.used])
        dev.off()
@@ -417,7 +436,7 @@ if (exists("pedfile") & exists("GCheck")) {
        pairs(EMMrates, main="Excess Mismatch Rates", labels=c("Father2,\nMother2","Father1,\nMother2","Father2,\nMother1","Father1,\nMother1"),
                   upper.panel=panel.yeqx,lower.panel=NULL,col.points=fcolo[uo],pch=plotch)
        dev.off()
-      table(BothMatches$BothAssign)
+      print( table(BothMatches$BothAssign) )
       }
      }
   }
