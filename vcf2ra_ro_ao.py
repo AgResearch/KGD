@@ -39,6 +39,7 @@ while line:
 	ad_pos = "" ##Needs to be defined so can check if the string is NULL
 	ro_pos = "" ##Needs to be defined so can check if the string is NULL
 	ao_pos = "" ##Needs to be defined so can check if the string is NULL
+	dp4_pos = "" ##Needs to be defined so can check if the string is NULL
         empty_genotypes = ['./.', '.,.', '.', '.|.']
 	if line.startswith('##'):
 		pass
@@ -66,7 +67,8 @@ while line:
 			elif "RO" and "AO" in format:		#Added line here to look for RO and AO as well as AD. Could possibly combine with first if?
 				ro_pos = format.index('RO')	#Where is RO?
 				ao_pos = format.index('AO')	#Where is AO?
-								
+			elif "DP4" in format:
+				dp4_pos = format.index('DP4')
 			else:
 				print "\nERROR: We can't use this vcf file. AD (Allelic Depth) or RO (Reference allele observation count) and AO (Alternate allele observation count) information is needed.\n"
 				sys.exit()
@@ -83,6 +85,12 @@ while line:
 							outlist.append(i[ad_pos])
 					elif (ro_pos and ao_pos) or (ro_pos == 0 and ao_pos==0):	#ELSE IF ro_pos and ao_pos are not null or are equal to 0
 						ad = str(i[ro_pos]) + "," + str(i[ao_pos])	#Create a string of 'RO,AO', in the same format as AD.	
+						outlist.append(ad)
+					elif (dp4_pos):
+						counts = i[dp4_pos].split(",")
+						allele1 = int(counts[0]) + int(counts[1])
+						allele2 = int(counts[2]) + int(counts[3])
+						ad = str(allele1) + "," + str(allele2)
 						outlist.append(ad)
 					else:
 						##Should never really get here, but if AD, AO and RO are all null, it will break the script
