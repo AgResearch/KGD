@@ -43,7 +43,7 @@ readChip <- function(genofilefn0 = genofile) {
   SNP_Names <<- ghead[-1]
   nsnps <<- length(SNP_Names)
   snpnums <- ((1:length(genost))-1) %% (nsnps+1)
-  genon <- matrix(as.numeric(genost[which(snpnums !=0)]) ,ncol=nsnps,byrow=TRUE)
+  genon <<- matrix(as.numeric(genost[which(snpnums !=0)]) ,ncol=nsnps,byrow=TRUE)
   seqID <<-  genost[which(snpnums ==0)]
   nind <<- length(seqID)
   rm(genost)
@@ -81,8 +81,8 @@ readTassel <- function(genofilefn0 = genofile) {
 samp.remove <- function (samppos=NULL) {
  if(length(samppos)>0) {
     if(gform != "chip") alleles <<- alleles[-samppos, ]
-    depth <<- depth[-samppos, ]
-    sampdepth <<- sampdepth[-samppos]
+    if(exists("depth")) depth <<- depth[-samppos, ]
+    if(exists("sampdepth")) sampdepth <<- sampdepth[-samppos]
     seqID <<- seqID[-samppos]
     nind <<- nind - length(samppos)
   }
@@ -92,15 +92,15 @@ snp.remove <- function(snppos=NULL) {
  if (length(snppos) > 0) {
    p <<- p[-snppos]
    nsnps <<- length(p)
-   depth <<- depth[, -snppos]
+   if(exists("depth")) depth <<- depth[, -snppos]
    SNP_Names <<- SNP_Names[-snppos]
    if (gform == "chip") {
     genon <<- genon[, -snppos]
    } else {
      uremovea <- sort(c(2 * snppos, 2 * snppos - 1))  # allele positions
-     RAcounts <<- RAcounts[-snppos, ]
+     if(exists("RAcounts")) RAcounts <<- RAcounts[-snppos, ]
      alleles <<- alleles[, -uremovea]
-     allelecounts <<- allelecounts[uremovea]
+     if(exists("allelecounts")) allelecounts <<- allelecounts[uremovea]
      if (gform == "uneak") AFrq <<- AFrq[-snppos]
    }
   }
