@@ -560,15 +560,14 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
 writeG <- function(Guse, outname, outtype=0, indsubset,IDuse ) { # IDuse is for only those samples in Guse
  if (missing(indsubset))   indsubset <- 1:nrow(Guse)
  if (missing(outname))   outname <- "GBS-Gmatrix"
- seqID <- seqID[indsubset]
  IDname <- as.character(substitute(IDuse))
- if (missing(IDuse))  { IDuse <- seqID; IDname <- "seqID" }
+ if (missing(IDuse))  { IDuse <- seqID[indsubset]; IDname <- "seqID" }
  if(1 %in% outtype) {
-  savelist <- list(Guse=Guse,seqID=seqID)
+  savelist <- list(Guse=Guse,IDuse=IDuse)
   Gname <- deparse(substitute(Guse))
   charpos <- regexpr("[",Gname,fixed=TRUE) ; if (charpos>0) Gname <- substr(Gname,1,charpos-1)
   charpos <- regexpr("$",Gname,fixed=TRUE) ; if (charpos>0) Gname <- substr(Gname,charpos+1,nchar(Gname))
-  names(savelist)[1] <- Gname
+  names(savelist) <- c(Gname,IDname)
   save(list=names(savelist),file= paste0(outname,".RData"), envir=list2env(savelist))
   }
  if(2 %in% outtype) {
