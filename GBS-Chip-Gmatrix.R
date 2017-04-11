@@ -64,11 +64,16 @@ readTassel <- function(genofilefn0 = genofile) {
    # placeholder for code to use data.table
    isgzfile <- grepl(".gz",genofilefn0) #gz unzipping will only work on linux systemss
    } else {
-   if (gform == "Tassel") 
+   if (gform == "Tassel"){
      genosin <- scan(genofile, skip = 1, sep = "\t", what = c(list(chrom = "", coord = 0), rep(list(""), nind)))
-   if (gform == "uneak") 
+     chrom <<- genosin[[1]]
+     pos <<- genosin[[2]]
+     SNP_Names <<- paste(genosin[[1]],genosin[[2]],sep="_")
+   }
+   if (gform == "uneak"){
      genosin <- scan(genofile, skip = 1, sep = "\t", what = c(list(chrom = ""), rep(list(""), nind), list(hetc1 = 0, hetc2 = 0, acount1 = 0, acount2 = 0, p = 0)))
-   SNP_Names <<- genosin[[1]]
+     SNP_Names <<- genosin[[1]]
+   }
    nsnps <<- length(SNP_Names)
    alleles <<- matrix(0, nrow = nind, ncol = 2 * nsnps)
    for (iind in 1:nind) alleles[iind, ] <<- matrix(as.numeric(unlist(strsplit(genosin[[iind + switch(gform, uneak = 1, Tassel = 2)]], split = gsep, 
@@ -94,6 +99,8 @@ snp.remove <- function(snppos=NULL) {
    nsnps <<- length(p)
    if(exists("depth")) depth <<- depth[, -snppos]
    SNP_Names <<- SNP_Names[-snppos]
+   if(exists("chrom")) chrom <<- chrom[-snppos]
+   if(exists("pos")) pos <<- pos[-snppos]
    if (gform == "chip") {
     genon <<- genon[, -snppos]
    } else {
