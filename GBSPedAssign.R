@@ -27,9 +27,9 @@ cat("Parentage parameter settings\n----------------------------\n rel.thresh\t",
     "\n nboot\t\t",nboot,
     "\n boot.thresh\t",boot.thresh," (relatedness difference to invoke bootstrapping)",
     "\n")
-if(length(indusbset) != nrow(eval(parse(text = GCheck))) {
+if(length(indsubset) != nrow(eval(parse(text = GCheck)))) {
  OK4ped <- FALSE
- cat("Number of individuals",length(indsubset),"does not match G matrix",nrow(eval(parse(text = GCheck)),"\n")
+ cat("Number of individuals",length(indsubset),"does not match G matrix",nrow(eval(parse(text = GCheck))),"\n")
  } 
 
 panel.yeqx <- function(x,y,col.points="black",col.line="red",...){   #panel function for pairs with identity line added
