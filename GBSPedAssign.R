@@ -3,6 +3,8 @@
 # assume all in pedfile are in the genotype results. To do: remove those that are not
 OK4ped <- TRUE
 if (!exists("rel.thresh"))   rel.thresh  <- 0.4
+if (!exists("rel.threshF"))  rel.threshF <- rel.thresh
+if (!exists("rel.threshM"))  rel.threshM <- rel.thresh
 if (!exists("emm.thresh"))   emm.thresh  <- 0.01           # Excess for single parent match
 if (!exists("emm.thresh2"))  emm.thresh2 <- 2*emm.thresh   # Excess for parent-pair match
 if (!exists("emmdiff.thresh2"))  emmdiff.thresh2 <-0  # alternate parent-pair based on emm
@@ -16,7 +18,8 @@ if (!exists("depth.max")) depth.max <- Inf  # for bootstrapping
 if (!exists("puse")) puse <- p
 if (!exists("nboot")) nboot <- 1000  # for bootstrapping
 if (!exists("boot.thresh")) boot.thresh <- 0.05 # rel diff for invoking bootstrapping
-cat("Parentage parameter settings\n----------------------------\n rel.thresh\t",rel.thresh,
+cat("Parentage parameter settings\n----------------------------\n rel.threshF\t",rel.threshF,
+    "\n rel.threshM\t",rel.threshM,
     "\n emm.thresh\t",emm.thresh,
     "\n emm.thresh2\t",emm.thresh2,
     "\n emmdiff.thresh2\t",emmdiff.thresh2,
@@ -114,7 +117,7 @@ parmatch <- function(partype, Gmatrix) {
   offspringpos <- match(pedinfo$seqID, seqID[indsubset])  # all in pedigree file considered as offspring
   parpos <- match(ParseqID, seqID[indsubset])
   ParRel <- Gmatrix[cbind(offspringpos, parpos)]
-  ParMatch <- (ParRel > rel.thresh)
+  ParMatch <- (ParRel > ifelse(partype == "Father", rel.threshF,rel.threshM))
   png(paste0(partype, "Verify.png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
    pairs(cbind(ParRel, offspringpos, parpos), labels = c("Relatedness", "Offspring order", paste(partype, "order")))
    dev.off()
@@ -149,6 +152,7 @@ bestmatch <- function(ospos, parpos, Guse, partype) {
 }
 
 groupmatch <- function(Guse, partype) {
+  rel.thresh <-  ifelse(partype == "Father", rel.threshF,rel.threshM)
   groupIDs <- unique(pedinfo[, paste0(partype, "Group")])
   groupIDs <- na.omit(groupIDs)
   groupIDs <- groupIDs[!groupIDs == ""]
@@ -400,10 +404,10 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
        altOK <- TRUE
        if (BothMatches[ipos,paste0("rel",altpar)] - BothMatches$Inb[ipos] > inb.thresh | EMMrate.min[ipos] > emm.thresh2) altOK <- FALSE
        if (grepl("F2",altpar)) {
-        if(BothMatches[ipos, "Fatherrel2nd"] < rel.thresh | BothMatches[ipos, "mmrateFather2"] - BothMatches[ipos, "exp.mmrateFather2"] > emm.thresh ) altOK <- FALSE
+        if(BothMatches[ipos, "Fatherrel2nd"] < rel.threshF | BothMatches[ipos, "mmrateFather2"] - BothMatches[ipos, "exp.mmrateFather2"] > emm.thresh ) altOK <- FALSE
         }
        if (grepl("M2",altpar)) {
-        if(BothMatches[ipos, "Motherrel2nd"] < rel.thresh | BothMatches[ipos, "mmrateMother2"] - BothMatches[ipos, "exp.mmrateMother2"] > emm.thresh ) altOK <- FALSE
+        if(BothMatches[ipos, "Motherrel2nd"] < rel.threshM | BothMatches[ipos, "mmrateMother2"] - BothMatches[ipos, "exp.mmrateMother2"] > emm.thresh ) altOK <- FALSE
         }
        if(altOK) BothMatches$Alternate[ipos] <- altpar
        }
