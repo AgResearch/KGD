@@ -425,7 +425,8 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   samp.removed <- NULL
   if(cocall.thresh >= 0) {  # remove samples which wont get self-rel
    samp.removed <- which(sampdepth.max < 2)
-   lowpairs <- lowpairs[-(which(lowpairs[,1] %in% samp.removed | lowpairs[,2] %in% samp.removed)),,drop=FALSE]
+   ulow <- which(lowpairs[,1] %in% samp.removed | lowpairs[,2] %in% samp.removed)
+   if(length(ulow) > 0) lowpairs <- lowpairs[-ulow,,drop=FALSE]
    }   
   while(nrow(lowpairs) > 0) {
    lowsamptab <- table(as.vector(lowpairs))
