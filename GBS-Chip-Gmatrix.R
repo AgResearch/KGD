@@ -83,7 +83,8 @@ readTassel <- function(genofilefn0 = genofile) {
   invisible(NULL)
 }
 
-samp.remove <- function (samppos=NULL) {
+samp.remove <- function (samppos=NULL, keep=FALSE) {
+ if(keep) samppos <- setdiff(1:nind,samppos)
  if(length(samppos)>0) {
     if(gform != "chip") alleles <<- alleles[-samppos, ]
     if(exists("depth")) depth <<- depth[-samppos, ]
@@ -93,7 +94,8 @@ samp.remove <- function (samppos=NULL) {
   }
  }
 
-snp.remove <- function(snppos=NULL) {
+snp.remove <- function(snppos=NULL, keep=FALSE) {
+ if(keep) snppos <- setdiff(1:nsnps,snppos)
  if (length(snppos) > 0) {
    p <<- p[-snppos]
    nsnps <<- length(p)
@@ -187,14 +189,16 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
 
  if (!gform == "chip") {
   genon <<- alleles[, seq(1, 2 * nsnps - 1, 2)]/depth
-  uhet <- which(!genon^2 == genon)
-  genon <<- 2*genon
-  genon[uhet] <<- 1
+  genon <<-  trunc(2*genon-1)+1
+#  uhet <- which(!genon^2 == genon)
+#  genon <<- 2*genon
+#  genon[uhet] <<- 1
   if(outlevel > 7) {
+   uhet <- which(genon == 1)
    samples <<- genon
    samples[uhet] <<- 2* (sample.int(2, length(uhet), replace = TRUE) - 1)
    }
-  rm(uhet)
+#  rm(uhet)
   }
  gc()
 
