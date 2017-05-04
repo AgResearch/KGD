@@ -394,13 +394,14 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       BothMatches$BothAssign[which(BothMatches$relF1M1 - BothMatches$Inb > inb.thresh & BothMatches$BothAssign == "Y")] <- "I"
       BothMatches$BothAssign[which(BothMatches$FatherAssign == "Y" & BothMatches$BothAssign == "N")] <- "F"
       BothMatches$BothAssign[which(BothMatches$MotherAssign == "Y" & BothMatches$BothAssign == "N")] <- "M"
-      BothMatches$BothAssign[which(BothMatches$FatherAssign == "Y" & BothMatches$BothAssign == "E" & BothMatches$MotherAssign == "E")] <- "F"
-      BothMatches$BothAssign[which(BothMatches$MotherAssign == "Y" & BothMatches$BothAssign == "E" & BothMatches$FatherAssign == "E")] <- "M"
+      BothMatches$BothAssign[which(BothMatches$FatherAssign == "Y" & BothMatches$BothAssign %in% c("E","B") & BothMatches$MotherAssign %in% c("E","B"))] <- "F"
+      BothMatches$BothAssign[which(BothMatches$MotherAssign == "Y" & BothMatches$BothAssign %in% c("E","B") & BothMatches$FatherAssign %in% c("E","B"))] <- "M"
 
       BothMatches$Alternate <- ""
       Apos <- which(BothMatches$BothAssign=="A")
       for (ipos in Apos) {
-       altpar = c("F2M2","F1M2","F2M1")[which(EMMrates[ipos,] == EMMrate.min[ipos])]
+#       altpar = c("F2M2","F1M2","F2M1")[which(EMMrates[ipos,] == EMMrate.min[ipos])]
+       altpar = c("F2M2","F1M2","F2M1")[which.min(EMMrates[ipos,1:3])]
        altOK <- TRUE
        if (BothMatches[ipos,paste0("rel",altpar)] - BothMatches$Inb[ipos] > inb.thresh | EMMrate.min[ipos] > emm.thresh2) altOK <- FALSE
        if (grepl("F2",altpar)) {
