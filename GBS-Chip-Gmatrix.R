@@ -365,7 +365,8 @@ mergeSamples <- function(mergeIDs, indsubset) {
  aggr.msum <- rowsum(genon[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE)   # rowsum very fast
  aggr.mn <- rowsum(1 * !is.na(genon[indsubset,,drop=FALSE]),mergeIDs) 
  genon.m <- aggr.msum/aggr.mn
- genon.m[which(genon.m>0 & genon.m<0)] <- 1
+# genon.m[which(genon.m>0 & genon.m<0)] <- 1
+ genon.m <- trunc(2*genon.m-1)+1
  ID.m <- rownames(aggr.msum)
  depth.m <- rowsum(depth.orig[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE)
  nind.m <- nrow(genon.m)
