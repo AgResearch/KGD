@@ -115,7 +115,13 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
   }
  }
 
-finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=palette.aquatic) {
+finplot <- function(HWdiseq=HWdis, MAF=maf, SNPdepth=snpdepth, snpsubset=NULL, plotname="finplot", finpalette=palette.aquatic) {
+  ## check if only a subset of snps are to be used for the finplot
+  if(!is.null(snpsubset) & is.integer(snpsubset) & min(snpsubset)>0 & max(snpsubset)<=length(HWdiseq)){
+   HWdiseq <- HWdiseq[snpsubset]
+   MAF <- MAF[snpsubset]
+   SNPdepth <- SNPdepth[snpsubset]
+ }
  depthtrans <- function(x) round(20 * log(-log(1/(x + 0.9)) + 1.05))  # to compress colour scale at higher depths
  depthpoints <- c(0.5, 5, 50, 250)  # legend points
  transpoints <- depthtrans(depthpoints)
@@ -125,7 +131,7 @@ finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=pale
  legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol = 1))
  png(paste0(plotname,".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
   if(whitedist(finpalette) < 25) par(bg="grey")
-  plot(HWdiseq ~ MAF, col = finpalette[depthtrans(pmax(mindepthplot, pmin(snpdepth, maxdepthplot)))], cex = 0.8, xlim = c(0, 0.5), 
+  plot(HWdiseq ~ MAF, col = finpalette[depthtrans(pmax(mindepthplot, pmin(SNPdepth, maxdepthplot)))], cex = 0.8, xlim = c(0, 0.5), ylim=c(-0.25,0.25),
        xlab = "Minor allele frequency", ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5)
   rasterImage(legend_image, 0.05, -0.2, 0.07, -0.1)
   text(x = 0.1, y = -0.2 + 0.1 * transpoints/maxtrans, labels = format(depthpoints))
