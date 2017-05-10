@@ -117,10 +117,14 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
 
 finplot <- function(HWdiseq=HWdis, MAF=maf, SNPdepth=snpdepth, snpsubset=NULL, plotname="finplot", finpalette=palette.aquatic) {
   ## check if only a subset of snps are to be used for the finplot
-  if(!is.null(snpsubset) & is.integer(snpsubset) & min(snpsubset)>0 & max(snpsubset)<=length(HWdiseq)){
-   HWdiseq <- HWdiseq[snpsubset]
-   MAF <- MAF[snpsubset]
-   SNPdepth <- SNPdepth[snpsubset]
+  if(!is.null(snpsubset)){
+    if(is.integer(snpsubset) & min(snpsubset)>0 & max(snpsubset)<=length(HWdiseq)){
+      HWdiseq <- HWdiseq[snpsubset]
+      MAF <- MAF[snpsubset]
+      SNPdepth <- SNPdepth[snpsubset]
+    }
+    else 
+      warning("SNP subset not used in finplot function: Vector is not integer or out of range\nUsing original SNP set instead")
  }
  depthtrans <- function(x) round(20 * log(-log(1/(x + 0.9)) + 1.05))  # to compress colour scale at higher depths
  depthpoints <- c(0.5, 5, 50, 250)  # legend points
@@ -137,7 +141,7 @@ finplot <- function(HWdiseq=HWdis, MAF=maf, SNPdepth=snpdepth, snpsubset=NULL, p
   text(x = 0.1, y = -0.2 + 0.1 * transpoints/maxtrans, labels = format(depthpoints))
   text(x = 0.075, y = -0.075, labels = "SNP Depth", cex = 1.2)
   dev.off()
- }
+}
 
 HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig", finpalette=palette.aquatic) {
  sigtrans <- function(x) round(sqrt(x) * 40/max(sqrt(x))) + 1  # to compress colour scale at higher LRT
