@@ -156,8 +156,9 @@ mafplot <- function(MAF=maf,plotname="MAF") {
  }
 
 GBSsummary <- function() {
+ havedepth <- exists("depth")  # if depth present, assume it is the correct one & shouldn't be recalculated (as alleles may be the wrong one)
  if(gform != "chip") {
-  depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
+  if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
   sampdepth.max <<- apply(depth, 1, max)
   sampdepth <<- rowMeans(depth)
   u0 <- which(sampdepth.max == 0)
@@ -173,11 +174,13 @@ GBSsummary <- function() {
    print(data.frame(indnum = u1, seqID = seqID[u1]))
    }
   samp.remove(union(u0, u1))
-  allelecounts <<- colSums(alleles)
-  RAcounts <<- matrix(allelecounts, ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
-  p <<- RAcounts[, 1]/rowSums(RAcounts)  # p for ref allele - based on # reads, not on inferred # alleles
-  acountmin <- 1
-  acountmax <- max(rowSums(RAcounts))
+  if (!havedepth) { # not redone e.g. after merge
+   allelecounts <<- colSums(alleles)
+   RAcounts <<- matrix(allelecounts, ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
+   p <<- RAcounts[, 1]/rowSums(RAcounts)  # p for ref allele - based on # reads, not on inferred # alleles
+   acountmin <- 1
+   acountmax <- max(rowSums(RAcounts))
+   }
   if(exists("genosin")) rm(genosin)
   } #end GBS-specific
  write.csv(data.frame(seqID = seqID), "seqID.csv", row.names = FALSE)
@@ -188,8 +191,10 @@ GBSsummary <- function() {
 cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
 
  if (!gform == "chip") {
-  genon <<- alleles[, seq(1, 2 * nsnps - 1, 2)]/depth
-  genon <<-  trunc(2*genon-1)+1
+  if (!havedepth) {
+   genon <<- alleles[, seq(1, 2 * nsnps - 1, 2)]/depth
+   genon <<-  trunc(2*genon-1)+1
+   }
 #  uhet <- which(!genon^2 == genon)
 #  genon <<- 2*genon
 #  genon[uhet] <<- 1
@@ -329,12 +334,14 @@ depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine de
 
 upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
 
-posCreport <- function(mergeIDs,Guse,sfx = "") {
+posCreport <- function(mergeIDs,Guse,sfx = "",indsubset) {
+ if (missing(indsubset)) indsubset <- 1:nind
+ mergeIDs <- mergeIDs[indsubset]
  csvout <- paste0("posCreport", sfx, ".csv")
  cat("Positive Control Checks (also see", csvout, ")\n")
- seqIDtemp <- seqID
+ seqIDtemp <- seqID[indsubset]
  multiIDs <- unique(mergeIDs[which(duplicated(mergeIDs))])
- posCstats <- data.frame(mergeID=character(0),nresults=integer(0),selfrel=numeric(0),meanrel=numeric(0),minrel=numeric(0))
+ posCstats <- data.frame(mergeID=character(0),nresults=integer(0),selfrel=numeric(0),meanrel=numeric(0),minrel=numeric(0),meandepth=numeric(0),mindepth=numeric(0),meanCR=numeric(0))
  sink(paste0("posCchecks",sfx,".txt"),split=TRUE)
  for (i in seq_along(multiIDs)) {
   thisID <- multiIDs[i]
@@ -343,7 +350,10 @@ posCreport <- function(mergeIDs,Guse,sfx = "") {
   selfrel <- mean(diag(thisG))
   meanrel <- mean(upper.vec(thisG))
   minrel <- min(upper.vec(thisG))
-  posCstats <- rbind(posCstats, data.frame(mergeID=thisID,nresults=length(thispos),selfrel=selfrel,meanrel=meanrel,minrel=minrel))
+  meandepth <- mean(sampdepth[thispos])
+  mindepth <- min(sampdepth[thispos])
+  meanCR <- mean( 1 - rowSums(depth.orig[thispos,] == 0)/nsnps )
+  posCstats <- rbind(posCstats, data.frame(mergeID=thisID,nresults=length(thispos),selfrel=selfrel,meanrel=meanrel,minrel=minrel,meandepth=meandepth,mindepth=mindepth,meanCR=meanCR))
   ulorel <- which(thisG <= hirel.thresh & upper.tri(thisG), arr.ind = TRUE)
   if (nrow(ulorel) > 0) print(data.frame(Indiv1 = seqIDtemp[thispos[ulorel[, 1]]], Indiv2 = seqIDtemp[thispos[ulorel[, 2]]], rel = thisG[ulorel]))
   }
@@ -390,8 +400,13 @@ calcp <- function(indsubset, pmethod="A") {
  if(!pmethod == "G") pmethod <- "A"
  if (missing(indsubset))   indsubset <- 1:nind
  if (pmethod == "A") {
-  RAcountstemp <- matrix(colSums(alleles[indsubset,]), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
-  afreqs <- RAcountstemp[, 1]/rowSums(RAcountstemp)  # p for ref allele - based on # reads, not on inferred # alleles
+  if (nrow(alleles) == nind) {
+   RAcountstemp <- matrix(colSums(alleles[indsubset,]), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
+   afreqs <- RAcountstemp[, 1]/rowSums(RAcountstemp)  # p for ref allele - based on # reads, not on inferred # alleles
+   } else {
+   afreqs <- NULL
+   print("Error: alleles is wrong size for pmethod A")
+   }
   }
  if (pmethod == "G") afreqs <- colMeans(genon[indsubset,], na.rm = TRUE)/2  # allele freq assuming genotype calls
  afreqs
@@ -450,7 +465,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     hist(maf, breaks = 50, xlab = "MAF", col = "grey")
     dev.off()
     }
-  if (!gform == "chip" & calclevel > 2 & outlevel > 7) {
+  if (!gform == "chip" & calclevel > 2 & outlevel > 7 & nrow(samples) == nind) {
    samples0 <- samples[indsubset, snpsubset] - rep.int(2 * puse[snpsubset], rep(nindsub, nsnpsub))
    samples0[is.na(genon0)] <- 0
    }
@@ -470,7 +485,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   P1[!usegeno] <- 0
   div0 <- 2 * tcrossprod(P0, P1)
   
-  if (!gform == "chip" & calclevel > 2 & outlevel > 7) {
+  if (!gform == "chip" & calclevel > 2 & outlevel > 7  & nrow(samples) == nind) {
     GGBS3top <- tcrossprod(samples0)
     GGBS3bot <- (div0 + diag(diag(div0)))
     GGBS3 <- GGBS3top/GGBS3bot  # faster in 3 steps
@@ -489,7 +504,6 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   P0[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
   P1[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
   div0 <- 2 * tcrossprod(P0, P1)
-#old (delete if new OK)  GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2/2^depth[indsubset, snpsubset]))/(1 - 2/2^depth[indsubset, snpsubset]))/diag(div0)
   GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*depth2K(depth[indsubset, snpsubset])))/(1 - 2*depth2K(depth[indsubset, snpsubset])))/diag(div0)
   GGBS5 <- GGBS4
   diag(GGBS5) <- GGBS5d
@@ -508,7 +522,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    pcacolo <- fcolo[indsubset[pcasamps]]
    if (npc > 0) {
     png(paste0("Heatmap-G5", sfx, ".png"), width = 2000, height = 2000, pointsize = cex.pointsize *  18)
-    temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = T))
+    temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = TRUE))
     if(length(table(pcacolo)) > 1) {
      hmout <- heatmap(temp, col = rev(heat.colors(50)), ColSideColors=pcacolo, RowSideColors=pcacolo)
      } else {
@@ -526,14 +540,15 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    }
   if (!gform == "chip") {
     png(paste0("G", sfx, "diagdepth.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
-    plot(diag(GGBS5) ~ log(sampdepthsub + 1), col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth (log(x)+1)")
+#    plot(diag(GGBS5) ~ I(sampdepthsub + 1), col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth +1", log="x")
+    plot(diag(GGBS5) ~ sampdepthsub, col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth", log="x")
     dev.off()
   }
   if (calclevel %in% c(2,9)) {
    png(paste0("Gcompare", sfx, ".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
-   if (gform == "chip") 
+   if (gform == "chip" | nrow(samples) != nind) 
      plot(upper.vec(GGBS1) ~ upper.vec(GGBS5), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", xlab = "Using G5", ylab = "Using G1")
-   if (!gform == "chip" & calclevel > 2)  
+   if (!gform == "chip" & calclevel > 2 & nrow(samples) == nind)  
      pairs(cbind(upper.vec(GGBS1), upper.vec(GGBS3), upper.vec(GGBS5)), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", 
            labels = paste0("Using G", c("1", "3", "5")))
    dev.off()
@@ -542,14 +557,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   if (npc >= 1) {
     ### PCA analysis on GGBS5
     PC <- svd(GGBS5[pcasamps,pcasamps] - matrix(colMeans(GGBS5[pcasamps,pcasamps]), nrow = length(pcasamps), ncol = length(pcasamps), byrow = TRUE), nu = npc)
-    eval <- PC$d^2/sum(PC$d^2)
+    eval <- sign(PC$d) * PC$d^2/sum(PC$d^2)
     PC$x <- PC$u %*% diag(PC$d[1:npc],nrow=npc)  # nrow to get correct behaviour when npc=1
     cat("minimum eigenvalue: ", min(eval), "\n")  #check for +ve def
-    if (npc > 2) {
-      pdf(paste0("PCG5", sfx, ".pdf"), pointsize = cex.pointsize * 12)
-      pairs(PC$x[,1:npc], cex=0.6, label=paste(dimnames(PC$x)[[2]],round(eval,3),sep="\n")[1:npc], col=fcolo[indsubset[pcasamps]])
-      dev.off()
-    }
     png(paste0("PC1v2G5", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
      if(npc > 1) {
       plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = pcacolo, xlab = "Principal component 1", ylab = "Principal component 2")
@@ -557,6 +567,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
       hist(PC$x[, 1], 50)
       }
      dev.off()
+    if (npc > 2) {
+      pdf(paste0("PCG5", sfx, ".pdf"), pointsize = cex.pointsize * 12)
+      pairs(PC$x[,1:npc], cex=0.6, label=paste(dimnames(PC$x)[[2]],round(eval,3),sep="\n")[1:npc], col=pcacolo)
+      dev.off()
+      }
     if(mdsplot) {
      png(paste0("MDS1v2G5", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
       mdsout <- cmdscale(dist(GGBS5))
