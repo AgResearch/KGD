@@ -13,7 +13,6 @@ readGBS <- function(genofilefn = genofile) {
  if (gform == "chip") readChip(genofilefn)
  if (gform == "TagDigger") readTD(genofilefn)
  if (gform %in% c("uneak","Tassel")) readTassel(genofilefn)
- if (gform != "chip") depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
  }
 
 readTD <- function(genofilefn0 = genofile) {
@@ -168,6 +167,7 @@ mafplot <- function(MAF=maf,plotname="MAF") {
 
 GBSsummary <- function() {
  if(gform != "chip") {
+  depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
   sampdepth.max <<- apply(depth, 1, max)
   sampdepth <<- rowMeans(depth)
   u0 <- which(sampdepth.max == 0)
