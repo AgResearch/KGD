@@ -8,7 +8,8 @@ if (!exists("rel.threshM"))  rel.threshM <- rel.thresh
 if (!exists("emm.thresh"))   emm.thresh  <- 0.01           # Excess for single parent match
 if (!exists("emm.thresh2"))  emm.thresh2 <- 2*emm.thresh   # Excess for parent-pair match
 if (!exists("emmdiff.thresh2"))  emmdiff.thresh2 <-0  # alternate parent-pair based on emm
-if (!exists("inb.thresh"))   inb.thresh  <- 0.2       # par relatedness - inbreeding
+if (!exists("inb.thresh"))   inb.thresh  <- 0.2       # par relatedness - 2 * inbreeding
+if (!exists("minr4inb"))     minr4inb    <- NULL      # par relatedness - inbreeding
 if (!exists("boota.thresh")) boota.thresh <- 99       # assignment threshold
 if (!exists("mindepth.mm")) mindepth.mm <- 1            # changed to 1 to coincide to change to using exp mm rate
 if (!exists("indsubset")) indsubset <- seq_along(seqID)
@@ -389,9 +390,10 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       BothMatches$BothAssign <- assign.rank[pmax(match(BothMatches$FatherAssign,assign.rank),match(BothMatches$MotherAssign,assign.rank))]
       EMMrates <- with(BothMatches,cbind(mmrateF2M2-exp.mmrateF2M2,mmrateF1M2-exp.mmrateF1M2,mmrateF2M1-exp.mmrateF2M1,mmrateF1M1-exp.mmrateF1M1))
       EMMrate.min <- apply(EMMrates, MARGIN=1, min)
+      if (is.null(minr4inb)) minr4inb <- min(BothMatches$relF1M1) - 0.001
       BothMatches$BothAssign[which(EMMrates[,4] > emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:4])] <- "E"
       BothMatches$BothAssign[EMMrates[,4]-EMMrate.min > emmdiff.thresh2 & EMMrate.min > emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:5]] <- "A"
-      BothMatches$BothAssign[which(BothMatches$relF1M1 - BothMatches$Inb > inb.thresh & BothMatches$BothAssign == "Y")] <- "I"
+      BothMatches$BothAssign[which(BothMatches$relF1M1 - 2 * BothMatches$Inb > inb.thresh & BothMatches$relF1M1 > minr4inb & BothMatches$BothAssign == "Y")] <- "I"
       BothMatches$BothAssign[which(BothMatches$FatherAssign == "Y" & BothMatches$BothAssign == "N")] <- "F"
       BothMatches$BothAssign[which(BothMatches$MotherAssign == "Y" & BothMatches$BothAssign == "N")] <- "M"
       BothMatches$BothAssign[which(BothMatches$FatherAssign == "Y" & BothMatches$BothAssign %in% c("E","B") & BothMatches$MotherAssign %in% c("E","B"))] <- "F"
@@ -421,6 +423,8 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       png("ParRel-Inb.png", width = 960, height = 960, pointsize = cex.pointsize *  21)
        plot(BothMatches$relF1M1 ~ BothMatches$Inb,pch=plotch,col=plotcol,sub="0.5 <= mean depth < 1",col.sub="skyblue2",
             xlab="Estimated Inbreeding",ylab="Estimated (best match) parent relatedness")
+       abline(a=0, b=2, col="red")
+       lines(x=c(min(BothMatches$Inb), (minr4inb-inb.thresh)/2,max(BothMatches$Inb)),y=c(minr4inb,minr4inb,2*max(BothMatches$Inb)+inb.thresh),col="grey")
        title(sub="X: unassigned parent(s)",adj=0)
        title(sub="mean depth < 0.5",col.sub="grey75",adj=0.95)
        dev.off()

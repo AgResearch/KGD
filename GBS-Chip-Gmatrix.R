@@ -503,8 +503,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   P1 <- 1 - P0
   P0[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
   P1[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
-  div0 <- 2 * tcrossprod(P0, P1)
-  GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*depth2K(depth[indsubset, snpsubset])))/(1 - 2*depth2K(depth[indsubset, snpsubset])))/diag(div0)
+#  div0 <- 2 * diag(tcrossprod(P0, P1))  # rowSums version faster
+  div0 <- 2 * rowSums(P0 * P1)
+  GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*depth2K(depth[indsubset, snpsubset])))/(1 - 2*depth2K(depth[indsubset, snpsubset])))/div0
   GGBS5 <- GGBS4
   diag(GGBS5) <- GGBS5d
   cat("Mean self-relatedness (G5 diagonal):", mean(GGBS5d), "\n")
@@ -541,7 +542,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   if (!gform == "chip") {
     png(paste0("G", sfx, "diagdepth.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
 #    plot(diag(GGBS5) ~ I(sampdepthsub + 1), col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth +1", log="x")
-    plot(diag(GGBS5) ~ sampdepthsub, col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth", log="x")
+    plot(diag(GGBS5) ~ sampdepthsub, col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth (log scale)", log="x")
     dev.off()
   }
   if (calclevel %in% c(2,9)) {
