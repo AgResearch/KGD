@@ -186,7 +186,7 @@ groupmatch <- function(Guse, partype) {
     EMMrate <- allgmatch[, paste0("mmrate", partype)] - allgmatch[, paste0("exp.mmrate", partype)]
     EMMrate2 <- allgmatch[, paste0("mmrate", partype, "2")] - allgmatch[, paste0("exp.mmrate", partype, "2")] 
     ### bootstrap section
-    bootpos <- which(allgmatch[,paste0(partype, "rel")] > rel.thresh & allgmatch[,paste0(partype, "rel")] - allgmatch[,paste0(partype, "rel2nd")] < boot.thresh)
+    bootpos <- which(allgmatch[,paste0(partype, "rel")] > rel.thresh & EMMrate > emm.thresh & allgmatch[,paste0(partype, "rel")] - allgmatch[,paste0(partype, "rel2nd")] < boot.thresh)
     nsnpsub <- length(snpsubset)
     if(length(bootpos) > 0) {
      for(bcase in seq_along(bootpos)) {
@@ -343,7 +343,8 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
   write.csv(pedinfo, "PedVerify.csv", row.names = FALSE)
   if (exists("groupsfile")) {
     assign.rank <- c("Y","I","B","A","E","F","M","N")
-    assign.pch <- c(16,2,6,1,15,13,13,4)
+#    assign.pch <- c(16,2,6,1,15,13,13,4)
+    assign.pch <- c(16,2,6,1,15,70,77,4)
     groupsinfo <- read.csv(groupsfile, stringsAsFactors = FALSE, colClasses=(ParGroup="character"))
     groupsinfo <- groupsinfo[!duplicated(groupsinfo),]  # remove row duplicates
     groupsinfo$Genotyped <- ifelse(is.na(match(pedinfo$seqID[match(groupsinfo$IndivID,pedinfo$IndivID)],seqID)),"N","Y")
@@ -392,7 +393,7 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       EMMrate.min <- apply(EMMrates, MARGIN=1, min)
       if (is.null(minr4inb)) minr4inb <- min(BothMatches$relF1M1) - 0.001
       BothMatches$BothAssign[which(EMMrates[,4] > emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:4])] <- "E"
-      BothMatches$BothAssign[EMMrates[,4]-EMMrate.min > emmdiff.thresh2 & EMMrate.min > emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:5]] <- "A"
+      BothMatches$BothAssign[EMMrates[,4]-EMMrate.min > emmdiff.thresh2 & EMMrate.min < emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:5]] <- "A"
       BothMatches$BothAssign[which(BothMatches$relF1M1 - 2 * BothMatches$Inb > inb.thresh & BothMatches$relF1M1 > minr4inb & BothMatches$BothAssign == "Y")] <- "I"
       BothMatches$BothAssign[which(BothMatches$FatherAssign == "Y" & BothMatches$BothAssign == "N")] <- "F"
       BothMatches$BothAssign[which(BothMatches$MotherAssign == "Y" & BothMatches$BothAssign == "N")] <- "M"
