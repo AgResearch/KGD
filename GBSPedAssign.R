@@ -186,7 +186,7 @@ groupmatch <- function(Guse, partype) {
     EMMrate <- allgmatch[, paste0("mmrate", partype)] - allgmatch[, paste0("exp.mmrate", partype)]
     EMMrate2 <- allgmatch[, paste0("mmrate", partype, "2")] - allgmatch[, paste0("exp.mmrate", partype, "2")] 
     ### bootstrap section
-    bootpos <- which(allgmatch[,paste0(partype, "rel")] > rel.thresh & EMMrate > emm.thresh & allgmatch[,paste0(partype, "rel")] - allgmatch[,paste0(partype, "rel2nd")] < boot.thresh)
+    bootpos <- which(allgmatch[,paste0(partype, "rel")] > rel.thresh & EMMrate < emm.thresh & allgmatch[,paste0(partype, "rel")] - allgmatch[,paste0(partype, "rel2nd")] < boot.thresh)
     nsnpsub <- length(snpsubset)
     if(length(bootpos) > 0) {
      for(bcase in seq_along(bootpos)) {
