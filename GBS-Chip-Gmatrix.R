@@ -88,6 +88,7 @@ samp.remove <- function (samppos=NULL, keep=FALSE) {
  if(length(samppos)>0) {
     if(gform != "chip") alleles <<- alleles[-samppos, ]
     if(exists("depth")) depth <<- depth[-samppos, ]
+    if(exists("depth.orig")) depth.orig <<- depth.orig[-samppos, ]
     if(exists("sampdepth")) sampdepth <<- sampdepth[-samppos]
     seqID <<- seqID[-samppos]
     nind <<- nind - length(samppos)
@@ -334,13 +335,15 @@ depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine de
 
 upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
 
-posCreport <- function(mergeIDs,Guse,sfx = "",indsubset) {
- if (missing(indsubset)) indsubset <- 1:nind
+posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset) {
+ if (missing(Gindsubset)) Gindsubset <- 1:nind
+ if (missing(indsubset)) indsubset <- 1:nrow(Guse)
  mergeIDs <- mergeIDs[indsubset]
  csvout <- paste0("posCreport", sfx, ".csv")
  cat("Positive Control Checks (also see", csvout, ")\n")
- seqIDtemp <- seqID[indsubset]
+ seqIDtemp <- seqID[Gindsubset][indsubset]
  multiIDs <- unique(mergeIDs[which(duplicated(mergeIDs))])
+ depthsub <- depth.orig[Gindsubset,,drop=FALSE]
  posCstats <- data.frame(mergeID=character(0),nresults=integer(0),selfrel=numeric(0),meanrel=numeric(0),minrel=numeric(0),meandepth=numeric(0),mindepth=numeric(0),meanCR=numeric(0))
  sink(paste0("posCchecks",sfx,".txt"),split=TRUE)
  for (i in seq_along(multiIDs)) {
@@ -350,11 +353,11 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset) {
   selfrel <- mean(diag(thisG))
   meanrel <- mean(upper.vec(thisG))
   minrel <- min(upper.vec(thisG))
-  meandepth <- mean(sampdepth[thispos])
-  mindepth <- min(sampdepth[thispos])
-  meanCR <- mean( 1 - rowSums(depth.orig[thispos,] == 0)/nsnps )
+  meandepth <- mean(sampdepth[Gindsubset][thispos])
+  mindepth <- min(sampdepth[Gindsubset][thispos])
+  meanCR <- mean( 1 - rowSums(depthsub[thispos,,drop=FALSE] == 0)/nsnps )
   posCstats <- rbind(posCstats, data.frame(mergeID=thisID,nresults=length(thispos),selfrel=selfrel,meanrel=meanrel,minrel=minrel,meandepth=meandepth,mindepth=mindepth,meanCR=meanCR))
-  ulorel <- which(thisG <= hirel.thresh & upper.tri(thisG), arr.ind = TRUE)
+  ulorel <- which(thisG <= 1 & thisG - selfrel < hirel.thresh - 1 & upper.tri(thisG), arr.ind = TRUE)
   if (nrow(ulorel) > 0) print(data.frame(Indiv1 = seqIDtemp[thispos[ulorel[, 1]]], Indiv2 = seqIDtemp[thispos[ulorel[, 2]]], rel = thisG[ulorel]))
   }
  sink()
@@ -507,7 +510,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   P1[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
 #  div0 <- 2 * diag(tcrossprod(P0, P1))  # rowSums version faster
   div0 <- 2 * rowSums(P0 * P1)
-  GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*depth2K(depth[indsubset, snpsubset])))/(1 - 2*depth2K(depth[indsubset, snpsubset])))/div0
+  Kdepth <- depth2K(depth[indsubset, snpsubset])
+  GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*Kdepth))/(1 - 2*Kdepth))/div0
+  rm(Kdepth)
   GGBS5 <- GGBS4
   diag(GGBS5) <- GGBS5d
   cat("Mean self-relatedness (G5 diagonal):", mean(GGBS5d), "\n")
