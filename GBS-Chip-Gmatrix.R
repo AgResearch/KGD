@@ -168,11 +168,11 @@ GBSsummary <- function() {
   nmax1 <- length(u1)
   if (nmax0 > 0) {
    cat(nmax0, "samples with no calls (maximum depth = 0) removed:\n")
-   print(data.frame(indnum = u0, seqID = seqID[u0]))
+   print(data.frame(indnum = u0, seqID = seqID[u0], sampdepth = sampdepth[u0]))
    }
   if (nmax1 > 0) {
    cat(nmax1, "samples with maximum depth of 1 and/or mean depth <", sampdepth.thresh, "removed:\n")
-   print(data.frame(indnum = u1, seqID = seqID[u1]))
+   print(data.frame(indnum = u1, seqID = seqID[u1], sampdepth = sampdepth[u1]))
    }
   samp.remove(union(u0, u1))
   if (!havedepth) { # not redone e.g. after merge
@@ -357,7 +357,7 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset) {
   mindepth <- min(sampdepth[Gindsubset][thispos])
   meanCR <- mean( 1 - rowSums(depthsub[thispos,,drop=FALSE] == 0)/nsnps )
   posCstats <- rbind(posCstats, data.frame(mergeID=thisID,nresults=length(thispos),selfrel=selfrel,meanrel=meanrel,minrel=minrel,meandepth=meandepth,mindepth=mindepth,meanCR=meanCR))
-  ulorel <- which(thisG <= 1 & thisG - selfrel < hirel.thresh - 1 & upper.tri(thisG), arr.ind = TRUE)
+  ulorel <- which(thisG < 1 & thisG - selfrel <= hirel.thresh - 1 & upper.tri(thisG), arr.ind = TRUE)
   if (nrow(ulorel) > 0) print(data.frame(Indiv1 = seqIDtemp[thispos[ulorel[, 1]]], Indiv2 = seqIDtemp[thispos[ulorel[, 2]]], rel = thisG[ulorel]))
   }
  sink()

@@ -25,6 +25,7 @@ cat("Parentage parameter settings\n----------------------------\n rel.threshF\t"
     "\n emm.thresh2\t",emm.thresh2,
     "\n emmdiff.thresh2\t",emmdiff.thresh2,
     "\n inb.thresh\t",inb.thresh," (parent relatedness v inbreeding)",
+    "\n minr4inb\t",minr4inb,
     "\n boota.thresh\t",boota.thresh,
     "\n depth.min\t",depth.min," (for bootstrapping)",
     "\n depth.max\t",depth.max," (for bootstrapping)",
@@ -337,8 +338,8 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
     udiff.mothers <- which(!match(pedinfo$MotherID[uoffspring], Motherset) %*% t(rep(1, length(uoffspring))) == rep(1, length(uoffspring)) %*% 
                              t(match(pedinfo$MotherID[uoffspring], Motherset)), arr.ind = T)
     udiff <- as.matrix(merge(udiff.fathers, udiff.mothers))
-    cat("Mean relatedness between individuals in full-sib families with different parents", mean(eval(parse(text = GCheck))[uoffspring, 
-                                                                                                                            uoffspring][udiff]), "\n")
+    opos <- match(pedinfo$seqID[uoffspring], seqID[indsubset])
+    cat("Mean relatedness between individuals in full-sib families with different parents", mean(eval(parse(text = GCheck))[opos,opos][udiff]), "\n")
   }
   write.csv(pedinfo, "PedVerify.csv", row.names = FALSE)
   if (exists("groupsfile")) {
