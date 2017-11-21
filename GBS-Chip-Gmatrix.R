@@ -519,7 +519,8 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   
   uhirel <- which(GGBS5 > hirel.thresh & upper.tri(GGBS5), arr.ind = TRUE)
   if (nrow(uhirel) > 0 & nsnpsub >= 999) 
-    write.csv(data.frame(Indiv1 = seqID[uhirel[, 1]], Indiv2 = seqID[uhirel[, 2]], G5rel = GGBS5[uhirel]), paste0("HighRelatedness", sfx, ".csv"), row.names = FALSE)
+    write.csv(data.frame(Indiv1 = seqID[uhirel[, 1]], Indiv2 = seqID[uhirel[, 2]], G5rel = GGBS5[uhirel], SelfRel1 = GGBS5d[uhirel[,1]], SelfRel2 = GGBS5d[uhirel[,2]] ), 
+              paste0("HighRelatedness", sfx, ".csv"), row.names = FALSE)
   if (!npc == 0 ) {
    # check for missing elements and subset to remove
    pcasamps <- 1:nindsub
