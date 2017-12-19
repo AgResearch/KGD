@@ -126,7 +126,7 @@ finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=pale
  legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol = 1))
  png(paste0(plotname,".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
   if(whitedist(finpalette) < 25) par(bg="grey")
-  plot(HWdiseq ~ MAF, col = finpalette[depthtrans(pmax(mindepthplot, pmin(snpdepth, maxdepthplot)))], cex = 0.8, xlim = c(0, 0.5),
+  plot(HWdiseq ~ MAF, col = finpalette[depthtrans(pmax(mindepthplot, pmin(snpdepth, maxdepthplot)))], cex = 0.8, 
        xlab = "Minor allele frequency", ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5, xlim=finxlim, ylim=finylim)
   rasterImage(legend_image, 0.05, -0.2, 0.07, -0.1)
   text(x = 0.1, y = -0.2 + 0.1 * transpoints/maxtrans, labels = format(depthpoints))
