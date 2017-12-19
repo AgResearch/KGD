@@ -116,7 +116,7 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
   }
  }
 
-finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=palette.aquatic) {
+finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=palette.aquatic, finxlim=c(0,0.5), finylim=c(-0.25, 0.25)) {
  depthtrans <- function(x) round(20 * log(-log(1/(x + 0.9)) + 1.05))  # to compress colour scale at higher depths
  depthpoints <- c(0.5, 5, 50, 250)  # legend points
  transpoints <- depthtrans(depthpoints)
@@ -126,8 +126,8 @@ finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=pale
  legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol = 1))
  png(paste0(plotname,".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
   if(whitedist(finpalette) < 25) par(bg="grey")
-  plot(HWdiseq ~ MAF, col = finpalette[depthtrans(pmax(mindepthplot, pmin(snpdepth, maxdepthplot)))], cex = 0.8, xlim = c(0, 0.5), 
-       xlab = "Minor allele frequency", ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5)
+  plot(HWdiseq ~ MAF, col = finpalette[depthtrans(pmax(mindepthplot, pmin(snpdepth, maxdepthplot)))], cex = 0.8, xlim = c(0, 0.5),
+       xlab = "Minor allele frequency", ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5, xlim=finxlim, ylim=finylim)
   rasterImage(legend_image, 0.05, -0.2, 0.07, -0.1)
   text(x = 0.1, y = -0.2 + 0.1 * transpoints/maxtrans, labels = format(depthpoints))
   text(x = 0.075, y = -0.075, labels = "SNP Depth", cex = 1.2)
@@ -431,11 +431,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     else{
       # Some checks on the plotly group vectors
       if(!is.vector(plotly.group)){
-        warning("The frist group object for use in plotly is not a vector.\nNo groups will be ploted in plotly.")
+        warning("The first group object for use in plotly is not a vector.\nNo groups will be ploted in plotly.")
         plotly.group = NULL
       }
       else if(length(plotly.group) != length(indsubset)){
-        warning("The frist group vector for use in plotly does not equal the number of individuals.\nNo groups will be ploted in plotly.")
+        warning("The first group vector for use in plotly does not equal the number of individuals.\nNo groups will be ploted in plotly.")
         plotly.group = NULL
       }
       if(!is.vector(plotly.group2)){
@@ -459,7 +459,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
       } else if(any(unlist(lapply(samp.info,function(x) length(x)!=length(indsubset))))){
         stop("Missing or extra sample information. Check that the 'samp.info' object is correct.")
       }
-      hover.info <- apply(sapply(1:length(samp.info),function(x) paste0(names(samp.info)[x],": ",samp.info[[x]]),simplify = T),1,paste0,collapse="<br>")
+      hover.info <- apply(sapply(1:length(samp.info),function(x) paste0(names(samp.info)[x],": ",samp.info[[x]]),simplify = TRUE),1,paste0,collapse="<br>")
     }
   }
   nsnpsub <- length(snpsubset)
@@ -523,7 +523,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   # callratesub <- 1-rowSums(depthsub==0)/nsnpsub
   cat("Mean sample depth:", mean(sampdepthsub), "\n")
   
-  P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = T)
+  P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = TRUE)
   P1 <- 1 - P0
   P0[!usegeno] <- 0
   P1[!usegeno] <- 0
@@ -543,7 +543,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   
   genon01 <- genon0
   genon01[depth[indsubset, snpsubset] < 2] <- 0
-  P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = T)
+  P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = TRUE)
   P1 <- 1 - P0
   P0[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
   P1[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
