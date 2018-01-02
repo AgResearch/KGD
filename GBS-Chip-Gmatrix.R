@@ -150,9 +150,9 @@ HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig",
   dev.off()
  }
 
-mafplot <- function(MAF=maf,plotname="MAF") {
+mafplot <- function(MAF=maf,plotname="MAF", barcol="grey", ...) {
  png(paste0(plotname,".png"), pointsize = cex.pointsize * 12)
-  hist(MAF, breaks = 50, xlab = "Minor Allele Frequency", col = "grey")
+  hist(MAF, breaks = 50, xlab = "Minor Allele Frequency", col = barcol, ...)
   dev.off()
  }
 
@@ -334,6 +334,20 @@ depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine de
 
 
 upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
+#seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1]  # undoc AgR function # might not get number of cols right
+seq2samp <- function(seqIDvec=seqID) sapply(strsplit(seqIDvec,split="_"),"[",1)
+colourby <- function(colgroup, groupsort=FALSE) {# undoc AgR function
+ collabels <- unique(colgroup)
+ if(groupsort) collabels <- sort(collabels)
+ ncol <- length(collabels)
+ collist <- rainbow(ncol)
+# if(ncol > 8 ) collist[seq(2,ncol,2)] <-  rgb(t(col2rgb(collist[seq(2,ncol,2)]))/1.5,maxColorValue = 255)  # darken every 2nd one
+ if(ncol > 8 ) collist[seq(2,ncol,2)] <-  rgb((t(col2rgb(collist[seq(2,ncol,2)]))+matrix(127,ncol=3,nrow=floor(ncol/2)))/2,maxColorValue = 255)  # darken every 2nd one
+ sampcol <- collist[match(colgroup,collabels)]
+ list(collabels=collabels,collist=collist,sampcol=sampcol)
+ }
+
+
 
 posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset) {
  if (missing(Gindsubset)) Gindsubset <- 1:nind
@@ -638,6 +652,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   npc <- abs(npc)
   if (npc >= 1) {
     ### PCA analysis on GGBS5
+    pcasymbol <- 1; if(length(pcasamps) < 100) pcasymbol <- 16
     PC <- svd(GGBS5[pcasamps,pcasamps] - matrix(colMeans(GGBS5[pcasamps,pcasamps]), nrow = length(pcasamps), ncol = length(pcasamps), byrow = TRUE), nu = npc)
     eval <- sign(PC$d) * PC$d^2/sum(PC$d^2)
     PC$x <- PC$u %*% diag(PC$d[1:npc],nrow=npc)  # nrow to get correct behaviour when npc=1
@@ -655,7 +670,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     } else{
       png(paste0("PC1v2G5", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
       if(npc > 1) {
-         plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = pcacolo, xlab = "Principal component 1", ylab = "Principal component 2")
+         plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Principal component 2")
        } else {
         hist(PC$x[, 1], 50)
       }
@@ -663,7 +678,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     }
     if (npc > 2) {
       pdf(paste0("PCG5", sfx, ".pdf"), pointsize = cex.pointsize * 12)
-      pairs(PC$x[,1:npc], cex=0.6, label=paste(dimnames(PC$x)[[2]],round(eval,3),sep="\n")[1:npc], col=pcacolo)
+      pairs(PC$x[,1:npc], cex=0.6, pch = pcasymbol, label=paste(dimnames(PC$x)[[2]],round(eval,3),sep="\n")[1:npc], col=pcacolo)
       dev.off()
       }
     if(mdsplot) {
@@ -689,6 +704,13 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
 
 
 writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # IDuse, metadf is for only those samples in Guse
+ Gname <- deparse(substitute(Guse))
+ if (is.list(Guse)) {
+  if(!"G5" %in% names(Guse)) stop("Guse is a list without a G5")
+  if("PC" %in% names(Guse)) PCtemp <- Guse$PC
+  Guse <- Guse$G5
+  Gname <- "G5"
+  }     
  if (missing(indsubset))   indsubset <- 1:nrow(Guse)
  if (missing(outname))   outname <- "GBS-Gmatrix"
  IDname <- as.character(deparse(substitute(IDuse)))
@@ -697,7 +719,6 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
  if (missing(IDuse))  { IDuse <- seqID[indsubset]; IDname <- "seqID" }
  if(1 %in% outtype) {
   savelist <- list(Guse=Guse,IDuse=IDuse)
-  Gname <- deparse(substitute(Guse))
   charpos <- regexpr("[",Gname,fixed=TRUE) ; if (charpos>0) Gname <- substr(Gname,1,charpos-1)
   charpos <- regexpr("$",Gname,fixed=TRUE) ; if (charpos>0) Gname <- substr(Gname,charpos+1,nchar(Gname))
   names(savelist) <- c(Gname,IDname)
@@ -727,6 +748,13 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
   write.table(Guse, paste0(outname,"-pca_vectors.tsv"),sep="\t",row.names=FALSE,col.names=FALSE,quote=FALSE)
   if(is.null(metadf)) write.table(IDuse, paste0(outname,"-pca_metadata.tsv"),sep="\t",row.names=FALSE,col.names=FALSE,quote=FALSE)
   if(!is.null(metadf)) write.table(metadf, paste0(outname,"-pca_metadata.tsv"),sep="\t",row.names=FALSE,col.names=TRUE,quote=FALSE)
+  }
+ if(6 %in% outtype & exists("PCtemp")) {
+  colnames(PCtemp$x) <- paste0("PC",1:ncol(PCtemp$x))
+  PCout <- data.frame(IDuse); colnames(PCout) <- IDname
+  if(!is.null(metadf)) PCout <- metadf   #cbind(PCout,metadf)
+  PCout <- cbind(PCout,PCtemp$x)
+  write.csv(PCout,paste0(outname,"-PC.csv"),row.names=FALSE,quote=FALSE)
   }
 }
 
