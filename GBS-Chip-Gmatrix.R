@@ -5,12 +5,14 @@ if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
 if (!exists("sampdepth.thresh")) sampdepth.thresh <- 0.01
 if (!exists("snpdepth.thresh"))  snpdepth.thresh  <- 0.01
 if (!exists("hirel.thresh"))     hirel.thresh     <- 0.9
+if (!exists("triallelic.thresh")) triallelic.thresh <- 0.005  # if third allele present in higher than this proportion, then discard SNP, otherwise discard 3rd & 4th allele calls (currently only for ANGSD data)
 if (!exists("cex.pointsize"))    cex.pointsize    <- 1
 if (!exists("functions.only"))   functions.only   <- FALSE
 if (!exists("outlevel"))         outlevel         <- 9
 
 readGBS <- function(genofilefn = genofile) {
  if (gform == "chip") readChip(genofilefn)
+ if (gform == "ANGSDcounts") readANGSD(genofilefn)
  if (gform == "TagDigger") readTD(genofilefn)
  if (gform %in% c("uneak","Tassel")) readTassel(genofilefn)
  }
@@ -35,6 +37,31 @@ readTD <- function(genofilefn0 = genofile) {
    for (isnp in seq(2*nsnps)) alleles[, isnp] <<- genosin[[isnp+1]] 
    }
   invisible(NULL)
+}
+
+readANGSD <- function(genofilefn0 = genofile) {
+  ghead <- scan(genofilefn0, what = "", nlines = 1, sep = "\t")
+  nind <<- (length(ghead) - 1) / 4
+  if (nind != floor(nind)) nind  <<- length(ghead) / 4
+  if (nind != floor(nind)) print("Incorrect number of columns")
+  seqID <<- substr(ghead,1,nchar(ghead)-2)[seq(4,4*nind,4)]
+  genosin <- scan(genofilefn0, skip = 1, sep = "\t", flush=TRUE, what = rep(list(integer(0)), 4*nind))
+  nsnps <<- length(genosin[[1]])
+  SNP_Names <<- paste0("SNP",formatC(seq(nsnps),width=nchar(nsnps),flag="0"))  # with leading zeros
+  alleles4 <- matrix(aperm(array(unlist(genosin,use.names=FALSE),dim =c(nsnps,4,nind)), c(3,2,1)), nrow=nind)
+    # cols in sets of 4 alleles, rows are samples  (temporary, until relevant alleles extracted)
+  acounts <- matrix(colSums(alleles4),ncol=4,byrow=TRUE)
+  acountord <- t(apply(acounts,1,order,decreasing=TRUE))
+  SNP.discard <- which(acounts[cbind(1:nsnps,acountord[,3])] / rowSums(acounts) > triallelic.thresh)
+  snpcols <- sort(c(seq(0,4*(nsnps-1),4)+acountord[,1],seq(0,4*(nsnps-1),4)+acountord[,2]))
+  alleles <<- alleles4[,snpcols]
+  if(length(SNP.discard) > 0) {
+   alleles <<- alleles[,-c(2*SNP.discard-1,2*SNP.discard)]
+   nsnps <<- nsnps - length(SNP.discard)
+   SNP_Names <<- SNP_Names[-SNP.discard]
+   cat(length(SNP.discard),"SNP(s) removed with 3rd allele frequency >",triallelic.thresh,"\n")
+   }
+ invisible(NULL)
 }
 
 readChip <- function(genofilefn0 = genofile) {
