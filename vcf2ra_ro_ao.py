@@ -1,4 +1,4 @@
-#input: vcf file
+#input: vcf file, tab delimited
 #output: RA (ReferenceAlternative) file, tab-delimited with columns, CHROM, POS, SAMPLES
 # where SAMPLES consists of colon-delimited sampleID, flowcellID, lane, seqlibID
 # CHROM   POS     999220:C4TWKACXX:7:56   999204:C4TWKACXX:7:56
@@ -44,12 +44,17 @@ while line:
 	if line.startswith('##'):
 		pass
 	elif line.startswith("#CHROM"):
-		line = line.split()
+		line = line.split('\t')
 		headerlist += line[9:]
 		print >> ofh, '\t'.join(headerlist)
 		print "found", len(headerlist), "samples"
+		for i in headerlist:
+			if " " in i:
+				print "WARN: spaces in sample names are discouraged", i
+			else:
+				pass
 	else:
-		line = line.split()
+		line = line.split('\t')
 		chrom = line[0]
 		outlist.append(chrom)
 		annotlist.append(chrom)
