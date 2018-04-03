@@ -467,7 +467,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   if (missing(puse))        puse <- p
   ## Some checks if using plotly
   if(withPlotly){
-    if(!require(plotly) || !require(heatmaply))
+    if(!require(plotly)) # || !require(heatmaply))
       withPlotly = FALSE
     else{
       # Some checks on the plotly group vectors
@@ -611,31 +611,31 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    pcacolo <- fcolo[indsubset[pcasamps]]
    if (npc > 0) {
      temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = TRUE))
-     if(withPlotly){
-       if(length(table(pcacolo)) > 1) {
-         temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
-                             width=2000, height=2000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
-                             labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
-                             label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"),
-                             ColSideColors=pcacolo, RowSideColors=pcacolo)
-       } else{
-         temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
-                             width=2000, height=2000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
-                             labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
-                             label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"))
-       }
-       htmlwidgets::saveWidget(temp_p, paste0("Heatmap-G5", sfx, ".html"))
-     } else {
+     # if(withPlotly){
+     #   if(length(table(pcacolo)) > 1) {
+     #     temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
+     #                         width=2000, height=2000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
+     #                         labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
+     #                         label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"),
+     #                         ColSideColors=pcacolo, RowSideColors=pcacolo)
+     #   } else{
+     #     temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
+     #                         width=2000, height=2000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
+     #                         labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
+     #                         label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"))
+     #   }
+     #   htmlwidgets::saveWidget(temp_p, paste0("Heatmap-G5", sfx, ".html"))
+     # } else {
        png(paste0("Heatmap-G5", sfx, ".png"), width = 2000, height = 2000, pointsize = cex.pointsize *  18)
        if(length(table(pcacolo)) > 1) {
-         hmout <- heatmap(temp, col = rev(heat.colors(50)), ColSideColors=pcacolo, RowSideColors=pcacolo)
+         hmout <- heatmap(temp, col = rev(heat.colors(50)), ColSideColors=pcacolo, RowSideColors=pcacolo, symm=T, revC=F)
        } else {
-         hmout <- heatmap(temp, col = rev(heat.colors(50)))
+         hmout <- heatmap(temp, col = rev(heat.colors(50)), symm=T, revC=F)
        }
        hmdat <- data.frame(rowInd=hmout$rowInd,seqIDInd=indsubset[pcasamps[hmout$rowInd]],seqID=seqID[indsubset[pcasamps[hmout$rowInd]]])
        write.csv(hmdat,paste0("HeatmapOrder", sfx, ".csv"),row.names=FALSE,quote=FALSE)
        dev.off()
-       }
+       #}
      }
    }
   if (calclevel %in% c(2,9)) {
