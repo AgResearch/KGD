@@ -116,6 +116,7 @@ samp.remove <- function (samppos=NULL, keep=FALSE) {
     if(gform != "chip") alleles <<- alleles[-samppos, ]
     if(exists("depth")) depth <<- depth[-samppos, ]
     if(exists("depth.orig")) depth.orig <<- depth.orig[-samppos, ]
+    if(exists("genon")) genon <<- genon[-samppos,]
     if(exists("sampdepth")) sampdepth <<- sampdepth[-samppos]
     seqID <<- seqID[-samppos]
     nind <<- nind - length(samppos)
@@ -127,8 +128,9 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
  if (length(snppos) > 0) {
    p <<- p[-snppos]
    nsnps <<- length(p)
-   if(exists("depth")) depth <<- depth[, -snppos]
    SNP_Names <<- SNP_Names[-snppos]
+   if(exists("depth")) depth <<- depth[, -snppos]
+   if(exists("genon")) genon <<- genon[, -snppos]
    if(exists("chrom")) chrom <<- chrom[-snppos]
    if(exists("pos")) pos <<- pos[-snppos]
    if (gform == "chip") {
@@ -161,7 +163,7 @@ finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=pale
   dev.off()
  }
 
-HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig", finpalette=palette.aquatic) {
+HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig", finpalette=palette.aquatic, finxlim=c(0,0.5), finylim=c(-0.25, 0.25)) {
  sigtrans <- function(x) round(sqrt(x) * 40/max(sqrt(x))) + 1  # to compress colour scale at higher LRT
  sigpoints <- c(0.5, 5, 50, 100)  # legend points
  transpoints <- sigtrans(sigpoints)
@@ -169,8 +171,8 @@ HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig",
  legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol = 1))
  png(paste0(plotname,".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
   if(whitedist(finpalette) < 25) par(bg="grey")
-  plot(HWdiseq ~ MAF, col = finpalette[sigtrans(ll)], cex = 0.8, xlim = c(0, 0.5), xlab = "Minor Allele Frequency", 
-       ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5)
+  plot(HWdiseq ~ MAF, col = finpalette[sigtrans(ll)], cex = 0.8, xlab = "Minor Allele Frequency", 
+       ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5, xlim=finxlim, ylim=finylim)
   rasterImage(legend_image, 0.05, -0.2, 0.07, -0.1)
   text(x = 0.1, y = -0.2 + 0.1 * transpoints/maxtrans, labels = format(sigpoints))
   text(x = 0.075, y = -0.075, labels = "log10 LRT", cex = 1.2)
@@ -506,6 +508,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
   depthsub <- depth.orig[indsubset, snpsubset]
+  if(min(depth) < 2) depth[depth < 2] <- 1.1        # in case got here without executing this
   cat("Calculating G matrix, analysis code:", sfx, "\n")
   cat("# SNPs: ", nsnpsub, "\n")
   cat("# individuals: ", nindsub, "\n")
