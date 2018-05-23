@@ -1,7 +1,7 @@
 #!/bin/echo Source me don't execute me 
 
 if (!exists("gform"))            gform            <- "uneak"
-if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
+if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt.gz"
 if (!exists("sampdepth.thresh")) sampdepth.thresh <- 0.01
 if (!exists("snpdepth.thresh"))  snpdepth.thresh  <- 0.01
 if (!exists("hirel.thresh"))     hirel.thresh     <- 0.9
@@ -442,8 +442,8 @@ mergeSamples <- function(mergeIDs, indsubset) {
  snpdepth.m <- colMeans(depth.m)
  pg.m <- colMeans(genon.m, na.rm = TRUE)/2  # allele freq assuming genotype calls
  list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
- }
-
+}
+ 
 calcp <- function(indsubset, pmethod="A") {
  if(!pmethod == "G") pmethod <- "A"
  if (missing(indsubset))   indsubset <- 1:nind
@@ -461,7 +461,7 @@ calcp <- function(indsubset, pmethod="A") {
  }
 
 calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0, calclevel = 9, cocall.thresh = 0, mdsplot=FALSE,
-                  withPlotly=FALSE, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL) {
+                  withPlotly=FALSE, withHeatmaply=withPlotly, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL) {
   # sfx is text to add to GGBS5 as graph name, puse is allele freqs (all snps) to use
   # calclevel: 1: G5 only, 2: G5 + reports using G5, 3: all G, 9: all
   if (missing(snpsubset))   snpsubset <- 1:nsnps
@@ -469,7 +469,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   if (missing(puse))        puse <- p
   ## Some checks if using plotly
   if(withPlotly){
-    if(!require(plotly)) # || !require(heatmaply))
+    if(!require(plotly))
       withPlotly = FALSE
     else{
       # Some checks on the plotly group vectors
@@ -504,6 +504,12 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
       }
       hover.info <- apply(sapply(1:length(samp.info),function(x) paste0(names(samp.info)[x],": ",samp.info[[x]]),simplify = TRUE),1,paste0,collapse="<br>")
     }
+  }
+  if(withHeatmaply){
+    if(!require(heatmaply) || compareVersion(as.character(packageVersion("heatmaply")), "0.15.0")==-1)
+      withHeatmaply = FALSE
+    if(!exists("hover.info"))
+      hover.info <- apply(sapply(1:length(samp.info),function(x) paste0(names(samp.info)[x],": ",samp.info[[x]]),simplify = TRUE),1,paste0,collapse="<br>")
   }
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
@@ -614,21 +620,24 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    pcacolo <- fcolo[indsubset[pcasamps]]
    if (npc > 0) {
      temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = TRUE))
-     # if(withPlotly){
-     #   if(length(table(pcacolo)) > 1) {
-     #     temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
-     #                         width=2000, height=2000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
-     #                         labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
-     #                         label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"),
-     #                         ColSideColors=pcacolo, RowSideColors=pcacolo)
-     #   } else{
-     #     temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
-     #                         width=2000, height=2000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
-     #                         labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
-     #                         label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"))
-     #   }
-     #   htmlwidgets::saveWidget(temp_p, paste0("Heatmap-G5", sfx, ".html"))
-     # } else {
+     if(withHeatmaply){
+       if(length(table(pcacolo)) > 1) {
+         temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
+                             width=1000, height=1000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
+                             labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
+                             label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"),
+                             ColSideColors=pcacolo, RowSideColors=pcacolo,
+                             file=paste0("Heatmap-G5", sfx, ".html")) %>% layout(width=1000,height=1000)
+       } else{
+         temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
+                             width=1000, height=1000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
+                             labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
+                             label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"),
+                             file=paste0("Heatmap-G5", sfx, ".html"))
+       }
+       
+       #htmlwidgets::saveWidget(temp_p, paste0("Heatmap-G5", sfx, ".html"))
+     } else {
        png(paste0("Heatmap-G5", sfx, ".png"), width = 2000, height = 2000, pointsize = cex.pointsize *  18)
        if(length(table(pcacolo)) > 1) {
          hmout <- heatmap(temp, col = rev(heat.colors(50)), ColSideColors=pcacolo, RowSideColors=pcacolo, symm=T, revC=F)
@@ -638,7 +647,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
        hmdat <- data.frame(rowInd=hmout$rowInd,seqIDInd=indsubset[pcasamps[hmout$rowInd]],seqID=seqID[indsubset[pcasamps[hmout$rowInd]]])
        write.csv(hmdat,paste0("HeatmapOrder", sfx, ".csv"),row.names=FALSE,quote=FALSE)
        dev.off()
-       #}
+       }
      }
    }
   if (calclevel %in% c(2,9)) {
@@ -649,11 +658,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
         layout(title="Self-relatedness estimates",xaxis=list(title = "Using G5"), yaxis=list(title = "Using G4"))
       htmlwidgets::saveWidget(temp_p, paste0("G", sfx, "-diag.html"))
     }
-    else{
-      png(paste0("G", sfx, "-diag.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
-      plot(diag(GGBS4) ~ diag(GGBS5), col = fcolo[indsubset], main = "Self-relatedness estimates", xlab = "Using G5", ylab = "Using G4")
-      dev.off()
-    }
+    png(paste0("G", sfx, "-diag.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
+    plot(diag(GGBS4) ~ diag(GGBS5), col = fcolo[indsubset], main = "Self-relatedness estimates", xlab = "Using G5", ylab = "Using G4")
+    dev.off()
    }
   if (!gform == "chip") {
     if(withPlotly){
@@ -663,12 +670,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
         layout(title="Self-relatedness estimate using G5",xaxis=list(title = "Sample depth (log scale)", zeroline=FALSE, type='log'),
                yaxis=list(title = "Self-relatedness estimate using G5", zeroline=FALSE))
       htmlwidgets::saveWidget(temp_p, paste0("G", sfx, "diagdepth.html"))
-    } else{
-      png(paste0("G", sfx, "diagdepth.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
-      #plot(diag(GGBS5) ~ I(sampdepthsub + 1), col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth +1", log="x")
-      plot(diag(GGBS5) ~ sampdepthsub, col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth (log scale)", log="x")
-      dev.off()
     }
+    png(paste0("G", sfx, "diagdepth.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
+    #plot(diag(GGBS5) ~ I(sampdepthsub + 1), col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth +1", log="x")
+    plot(diag(GGBS5) ~ sampdepthsub, col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth (log scale)", log="x")
+    dev.off()
   }
   if (calclevel %in% c(2,9)) {
    png(paste0("Gcompare", sfx, ".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
@@ -689,19 +695,16 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     cat("minimum eigenvalue: ", min(eval), "\n")  #check for +ve def
     if(withPlotly){
       if(npc > 1) {
-         temp_p <- plot_ly(y=PC$x[, 2],x=PC$x[, 1], type="scatter", mode="markers",
-                           hoverinfo="text", text=hover.info, width=640 + addpixel, height=640,
-                           marker=list(size=cex.pointsize*6), color=plotly.group, symbol=plotly.group2) %>%
-           layout(xaxis=list(title="Principal component 1",zeroline=F), yaxis=list(title="Principal component 2",zeroline=F))
-         htmlwidgets::saveWidget(temp_p, paste0("PC1v2G5", sfx, ".html"))
-      } else {
-        hist(PC$x[, 1], 50)
-      }
-    } else{
+        temp_p <- plot_ly(y=PC$x[, 2],x=PC$x[, 1], type="scatter", mode="markers",
+                          hoverinfo="text", text=hover.info, width=640 + addpixel, height=640,
+                          marker=list(size=cex.pointsize*6), color=plotly.group, symbol=plotly.group2) %>%
+          layout(xaxis=list(title="Principal component 1",zeroline=F), yaxis=list(title="Principal component 2",zeroline=F))
+        htmlwidgets::saveWidget(temp_p, paste0("PC1v2G5", sfx, ".html"))
+      } 
       png(paste0("PC1v2G5", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
       if(npc > 1) {
-         plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Principal component 2")
-       } else {
+        plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Principal component 2")
+      } else {
         hist(PC$x[, 1], 50)
       }
       dev.off()
