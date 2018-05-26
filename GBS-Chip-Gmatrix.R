@@ -1,7 +1,7 @@
 #!/bin/echo Source me don't execute me 
 
 if (!exists("gform"))            gform            <- "uneak"
-if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt.gz"
+if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
 if (!exists("sampdepth.thresh")) sampdepth.thresh <- 0.01
 if (!exists("snpdepth.thresh"))  snpdepth.thresh  <- 0.01
 if (!exists("hirel.thresh"))     hirel.thresh     <- 0.9
@@ -185,8 +185,13 @@ mafplot <- function(MAF=maf,plotname="MAF", barcol="grey", ...) {
   dev.off()
  }
 
+na.zero <- function (x) {
+    x[is.na(x)] <- 0
+    return(x)
+}
+
 GBSsummary <- function() {
- havedepth <- exists("depth")  # if depth present, assume it is the correct one & shouldn't be recalculated (as alleles may be the wrong one)
+ havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
   sampdepth.max <<- apply(depth, 1, max)
@@ -229,9 +234,10 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
 #  genon <<- 2*genon
 #  genon[uhet] <<- 1
   if(outlevel > 7) {
-   uhet <- which(genon == 1)
    samples <<- genon
-   samples[uhet] <<- 2* (sample.int(2, length(uhet), replace = TRUE) - 1)
+#   uhet <- which(genon == 1)
+#   samples[uhet] <<- 2* (sample.int(2, length(uhet), replace = TRUE) - 1)
+   samples[na.zero(genon) == 1] <<- 2* (sample.int(2, sum(genon == 1, na.rm=TRUE), replace = TRUE) - 1)  # allows genon to have > .Machine$integer.max elements
    }
 #  rm(uhet)
   }
@@ -442,8 +448,49 @@ mergeSamples <- function(mergeIDs, indsubset) {
  snpdepth.m <- colMeans(depth.m)
  pg.m <- colMeans(genon.m, na.rm = TRUE)/2  # allele freq assuming genotype calls
  list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
-}
- 
+ }
+
+mergeSamples2 <- function(mergeIDs, indsubset) {  
+ # this version to merge duplicates only ...
+ # doesn't do samples0, so cant do G3 
+ if (missing(indsubset)) indsubset <- 1:nind
+ mergeIDs <- mergeIDs[indsubset]
+ nseq <- rowsum(rep(1,length(indsubset)),mergeIDs) # results being merged
+ singleIDs <- row.names(nseq)[nseq==1]
+ usingle <- which(mergeIDs %in% singleIDs)
+ umultiple <- setdiff(1:length(indsubset),usingle)
+ aggr.msum <- rowsum(genon[indsubset[umultiple],,drop=FALSE],mergeIDs[umultiple],na.rm=TRUE)   # rowsum very fast
+ temp <- 1 * !is.na(genon[indsubset[umultiple],,drop=FALSE])
+ aggr.mn <- rowsum(temp,mergeIDs[umultiple]) 
+# aggr.mn <- rowsum(1 * !is.na(genon[indsubset,,drop=FALSE]),mergeIDs) 
+ rm(temp)
+ genon.m <- aggr.msum/aggr.mn
+ genon.m <- trunc(genon.m-1)+1
+ ID.m <- rownames(aggr.msum)
+ depth.m <- rowsum(depth.orig[indsubset[umultiple],,drop=FALSE],mergeIDs[umultiple],na.rm=TRUE)
+ nind.m <- nrow(genon.m)
+ seqID.m <- seqID[indsubset[umultiple]][match(ID.m,mergeIDs[umultiple])]
+ seqinfo <- read.table(text=seqID.m ,sep="_",fill=TRUE,stringsAsFactors=FALSE)
+ if(ncol(seqinfo)==5) { #Assume formated as ID_Flowcell_Lane_plate_X and return ID_merged_nsamples_0_X
+  seqinfo[,2] <- "merged"
+  seqinfo[,3] <- nseq[nseq>1]
+  seqinfo[,4] <- 0
+  seqID.m <- paste(seqinfo[,1],seqinfo[,2],seqinfo[,3],seqinfo[,4],seqinfo[,5],sep="_")
+  }
+ if(length(usingle) > 0) {
+  genon.m <- rbind(genon.m,genon[indsubset[usingle],,drop=FALSE])
+  ID.m <- c(ID.m,mergeIDs[usingle])
+  depth.m <- rbind(depth.m,depth.orig[indsubset[usingle],,drop=FALSE])
+  nind.m <- nind.m + length(usingle)
+  seqID.m <- c(seqID.m,seqID[indsubset[usingle]])
+  }
+ sampdepth.m <- rowMeans(depth.m)
+ snpdepth.m <- colMeans(depth.m)
+ pg.m <- colMeans(genon.m, na.rm = TRUE)/2  # allele freq assuming genotype calls
+ list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
+ }
+
+
 calcp <- function(indsubset, pmethod="A") {
  if(!pmethod == "G") pmethod <- "A"
  if (missing(indsubset))   indsubset <- 1:nind
@@ -559,7 +606,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     hist(maf, breaks = 50, xlab = "MAF", col = "grey")
     dev.off()
     }
-  if (!gform == "chip" & calclevel > 2 & outlevel > 7 & nrow(samples) == nind) {
+  samplesOK <- exists("samples")
+  if(samplesOK) if(nrow(samples) != nind) samplesOK <- FALSE
+  if (!gform == "chip" & calclevel > 2 & outlevel > 7 & samplesOK) {
    samples0 <- samples[indsubset, snpsubset] - rep.int(2 * puse[snpsubset], rep(nindsub, nsnpsub))
    samples0[is.na(genon0)] <- 0
    }
@@ -579,10 +628,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   P1[!usegeno] <- 0
   div0 <- 2 * tcrossprod(P0, P1)
   
-  if (!gform == "chip" & calclevel > 2 & outlevel > 7  & nrow(samples) == nind) {
+  if (!gform == "chip" & calclevel > 2 & outlevel > 7  & samplesOK) {
     GGBS3top <- tcrossprod(samples0)
     GGBS3bot <- (div0 + diag(diag(div0)))
     GGBS3 <- GGBS3top/GGBS3bot  # faster in 3 steps
+    rm(GGBS3top, GGBS3bot)
   } else {
     GGBS3 <- NULL
   }
@@ -590,6 +640,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   GGBS4top <- tcrossprod(genon0)
   GGBS4 <- GGBS4top/div0
   GGBS1 <- GGBS4top/2/sum(puse[snpsubset] * (1 - puse[snpsubset]))  
+  rm(GGBS4top)
   
   genon01 <- genon0
   genon01[depth[indsubset, snpsubset] < 2] <- 0
@@ -601,7 +652,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   div0 <- 2 * rowSums(P0 * P1)
   Kdepth <- depth2K(depth[indsubset, snpsubset])
   GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*Kdepth))/(1 - 2*Kdepth))/div0
-  rm(Kdepth)
+  rm(Kdepth, div0, P0, P1)
   GGBS5 <- GGBS4
   diag(GGBS5) <- GGBS5d
   cat("Mean self-relatedness (G5 diagonal):", mean(GGBS5d), "\n")
@@ -678,9 +729,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   }
   if (calclevel %in% c(2,9)) {
    png(paste0("Gcompare", sfx, ".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
-   if (gform == "chip" | nrow(samples) != nind)
+   if (gform == "chip" | !samplesOK)
      plot(upper.vec(GGBS1) ~ upper.vec(GGBS5), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", xlab = "Using G5", ylab = "Using G1")
-   if (!gform == "chip" & calclevel > 2 & nrow(samples) == nind)  
+   if (!gform == "chip" & calclevel > 2 & samplesOK)  
      pairs(cbind(upper.vec(GGBS1), upper.vec(GGBS3), upper.vec(GGBS5)), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", 
            labels = paste0("Using G", c("1", "3", "5")))
    dev.off()
