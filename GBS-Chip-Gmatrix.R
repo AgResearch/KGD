@@ -116,6 +116,7 @@ samp.remove <- function (samppos=NULL, keep=FALSE) {
     if(gform != "chip") alleles <<- alleles[-samppos, ]
     if(exists("depth")) depth <<- depth[-samppos, ]
     if(exists("depth.orig")) depth.orig <<- depth.orig[-samppos, ]
+    if(exists("genon")) genon <<- genon[-samppos,]
     if(exists("sampdepth")) sampdepth <<- sampdepth[-samppos]
     seqID <<- seqID[-samppos]
     nind <<- nind - length(samppos)
@@ -127,8 +128,9 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
  if (length(snppos) > 0) {
    p <<- p[-snppos]
    nsnps <<- length(p)
-   if(exists("depth")) depth <<- depth[, -snppos]
    SNP_Names <<- SNP_Names[-snppos]
+   if(exists("depth")) depth <<- depth[, -snppos]
+   if(exists("genon")) genon <<- genon[, -snppos]
    if(exists("chrom")) chrom <<- chrom[-snppos]
    if(exists("pos")) pos <<- pos[-snppos]
    if (gform == "chip") {
@@ -161,7 +163,7 @@ finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=pale
   dev.off()
  }
 
-HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig", finpalette=palette.aquatic) {
+HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig", finpalette=palette.aquatic, finxlim=c(0,0.5), finylim=c(-0.25, 0.25)) {
  sigtrans <- function(x) round(sqrt(x) * 40/max(sqrt(x))) + 1  # to compress colour scale at higher LRT
  sigpoints <- c(0.5, 5, 50, 100)  # legend points
  transpoints <- sigtrans(sigpoints)
@@ -169,8 +171,8 @@ HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig",
  legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol = 1))
  png(paste0(plotname,".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
   if(whitedist(finpalette) < 25) par(bg="grey")
-  plot(HWdiseq ~ MAF, col = finpalette[sigtrans(ll)], cex = 0.8, xlim = c(0, 0.5), xlab = "Minor Allele Frequency", 
-       ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5)
+  plot(HWdiseq ~ MAF, col = finpalette[sigtrans(ll)], cex = 0.8, xlab = "Minor Allele Frequency", 
+       ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5, xlim=finxlim, ylim=finylim)
   rasterImage(legend_image, 0.05, -0.2, 0.07, -0.1)
   text(x = 0.1, y = -0.2 + 0.1 * transpoints/maxtrans, labels = format(sigpoints))
   text(x = 0.075, y = -0.075, labels = "log10 LRT", cex = 1.2)
@@ -183,8 +185,13 @@ mafplot <- function(MAF=maf,plotname="MAF", barcol="grey", ...) {
   dev.off()
  }
 
+na.zero <- function (x) {
+    x[is.na(x)] <- 0
+    return(x)
+}
+
 GBSsummary <- function() {
- havedepth <- exists("depth")  # if depth present, assume it is the correct one & shouldn't be recalculated (as alleles may be the wrong one)
+ havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
   sampdepth.max <<- apply(depth, 1, max)
@@ -227,9 +234,10 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
 #  genon <<- 2*genon
 #  genon[uhet] <<- 1
   if(outlevel > 7) {
-   uhet <- which(genon == 1)
    samples <<- genon
-   samples[uhet] <<- 2* (sample.int(2, length(uhet), replace = TRUE) - 1)
+#   uhet <- which(genon == 1)
+#   samples[uhet] <<- 2* (sample.int(2, length(uhet), replace = TRUE) - 1)
+   samples[na.zero(genon) == 1] <<- 2* (sample.int(2, sum(genon == 1, na.rm=TRUE), replace = TRUE) - 1)  # allows genon to have > .Machine$integer.max elements
    }
 #  rm(uhet)
   }
@@ -442,6 +450,47 @@ mergeSamples <- function(mergeIDs, indsubset) {
  list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
  }
 
+mergeSamples2 <- function(mergeIDs, indsubset) {  
+ # this version to merge duplicates only ...
+ # doesn't do samples0, so cant do G3 
+ if (missing(indsubset)) indsubset <- 1:nind
+ mergeIDs <- mergeIDs[indsubset]
+ nseq <- rowsum(rep(1,length(indsubset)),mergeIDs) # results being merged
+ singleIDs <- row.names(nseq)[nseq==1]
+ usingle <- which(mergeIDs %in% singleIDs)
+ umultiple <- setdiff(1:length(indsubset),usingle)
+ aggr.msum <- rowsum(genon[indsubset[umultiple],,drop=FALSE],mergeIDs[umultiple],na.rm=TRUE)   # rowsum very fast
+ temp <- 1 * !is.na(genon[indsubset[umultiple],,drop=FALSE])
+ aggr.mn <- rowsum(temp,mergeIDs[umultiple]) 
+# aggr.mn <- rowsum(1 * !is.na(genon[indsubset,,drop=FALSE]),mergeIDs) 
+ rm(temp)
+ genon.m <- aggr.msum/aggr.mn
+ genon.m <- trunc(genon.m-1)+1
+ ID.m <- rownames(aggr.msum)
+ depth.m <- rowsum(depth.orig[indsubset[umultiple],,drop=FALSE],mergeIDs[umultiple],na.rm=TRUE)
+ nind.m <- nrow(genon.m)
+ seqID.m <- seqID[indsubset[umultiple]][match(ID.m,mergeIDs[umultiple])]
+ seqinfo <- read.table(text=seqID.m ,sep="_",fill=TRUE,stringsAsFactors=FALSE)
+ if(ncol(seqinfo)==5) { #Assume formated as ID_Flowcell_Lane_plate_X and return ID_merged_nsamples_0_X
+  seqinfo[,2] <- "merged"
+  seqinfo[,3] <- nseq[nseq>1]
+  seqinfo[,4] <- 0
+  seqID.m <- paste(seqinfo[,1],seqinfo[,2],seqinfo[,3],seqinfo[,4],seqinfo[,5],sep="_")
+  }
+ if(length(usingle) > 0) {
+  genon.m <- rbind(genon.m,genon[indsubset[usingle],,drop=FALSE])
+  ID.m <- c(ID.m,mergeIDs[usingle])
+  depth.m <- rbind(depth.m,depth.orig[indsubset[usingle],,drop=FALSE])
+  nind.m <- nind.m + length(usingle)
+  seqID.m <- c(seqID.m,seqID[indsubset[usingle]])
+  }
+ sampdepth.m <- rowMeans(depth.m)
+ snpdepth.m <- colMeans(depth.m)
+ pg.m <- colMeans(genon.m, na.rm = TRUE)/2  # allele freq assuming genotype calls
+ list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
+ }
+
+
 calcp <- function(indsubset, pmethod="A") {
  if(!pmethod == "G") pmethod <- "A"
  if (missing(indsubset))   indsubset <- 1:nind
@@ -459,7 +508,7 @@ calcp <- function(indsubset, pmethod="A") {
  }
 
 calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0, calclevel = 9, cocall.thresh = 0, mdsplot=FALSE,
-                  withPlotly=FALSE, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL) {
+                  withPlotly=FALSE, withHeatmaply=withPlotly, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL) {
   # sfx is text to add to GGBS5 as graph name, puse is allele freqs (all snps) to use
   # calclevel: 1: G5 only, 2: G5 + reports using G5, 3: all G, 9: all
   if (missing(snpsubset))   snpsubset <- 1:nsnps
@@ -467,7 +516,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   if (missing(puse))        puse <- p
   ## Some checks if using plotly
   if(withPlotly){
-    if(!require(plotly) || !require(heatmaply))
+    if(!require(plotly))
       withPlotly = FALSE
     else{
       # Some checks on the plotly group vectors
@@ -503,9 +552,16 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
       hover.info <- apply(sapply(1:length(samp.info),function(x) paste0(names(samp.info)[x],": ",samp.info[[x]]),simplify = TRUE),1,paste0,collapse="<br>")
     }
   }
+  if(withHeatmaply){
+    if(!require(heatmaply) || compareVersion(as.character(packageVersion("heatmaply")), "0.15.0")==-1)
+      withHeatmaply = FALSE
+    if(!exists("hover.info"))
+      hover.info <- apply(sapply(1:length(samp.info),function(x) paste0(names(samp.info)[x],": ",samp.info[[x]]),simplify = TRUE),1,paste0,collapse="<br>")
+  }
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
   depthsub <- depth.orig[indsubset, snpsubset]
+  if(min(depth) < 2) depth[depth < 2] <- 1.1        # in case got here without executing this
   cat("Calculating G matrix, analysis code:", sfx, "\n")
   cat("# SNPs: ", nsnpsub, "\n")
   cat("# individuals: ", nindsub, "\n")
@@ -550,7 +606,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     hist(maf, breaks = 50, xlab = "MAF", col = "grey")
     dev.off()
     }
-  if (!gform == "chip" & calclevel > 2 & outlevel > 7 & nrow(samples) == nind) {
+  samplesOK <- exists("samples")
+  if(samplesOK) if(nrow(samples) != nind) samplesOK <- FALSE
+  if (!gform == "chip" & calclevel > 2 & outlevel > 7 & samplesOK) {
    samples0 <- samples[indsubset, snpsubset] - rep.int(2 * puse[snpsubset], rep(nindsub, nsnpsub))
    samples0[is.na(genon0)] <- 0
    }
@@ -570,10 +628,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   P1[!usegeno] <- 0
   div0 <- 2 * tcrossprod(P0, P1)
   
-  if (!gform == "chip" & calclevel > 2 & outlevel > 7  & nrow(samples) == nind) {
+  if (!gform == "chip" & calclevel > 2 & outlevel > 7  & samplesOK) {
     GGBS3top <- tcrossprod(samples0)
     GGBS3bot <- (div0 + diag(diag(div0)))
     GGBS3 <- GGBS3top/GGBS3bot  # faster in 3 steps
+    rm(GGBS3top, GGBS3bot)
   } else {
     GGBS3 <- NULL
   }
@@ -581,6 +640,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   GGBS4top <- tcrossprod(genon0)
   GGBS4 <- GGBS4top/div0
   GGBS1 <- GGBS4top/2/sum(puse[snpsubset] * (1 - puse[snpsubset]))  
+  rm(GGBS4top)
   
   genon01 <- genon0
   genon01[depth[indsubset, snpsubset] < 2] <- 0
@@ -592,7 +652,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   div0 <- 2 * rowSums(P0 * P1)
   Kdepth <- depth2K(depth[indsubset, snpsubset])
   GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*Kdepth))/(1 - 2*Kdepth))/div0
-  rm(Kdepth)
+  rm(Kdepth, div0, P0, P1)
   GGBS5 <- GGBS4
   diag(GGBS5) <- GGBS5d
   cat("Mean self-relatedness (G5 diagonal):", mean(GGBS5d), "\n")
@@ -611,26 +671,29 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    pcacolo <- fcolo[indsubset[pcasamps]]
    if (npc > 0) {
      temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = TRUE))
-     if(withPlotly){
+     if(withHeatmaply){
        if(length(table(pcacolo)) > 1) {
          temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
-                             width=2000, height=2000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
+                             width=1000, height=1000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
                              labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
                              label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"),
-                             ColSideColors=pcacolo, RowSideColors=pcacolo)
+                             ColSideColors=pcacolo, RowSideColors=pcacolo,
+                             file=paste0("Heatmap-G5", sfx, ".html")) %>% layout(width=1000,height=1000)
        } else{
          temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
-                             width=2000, height=2000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
+                             width=1000, height=1000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
                              labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
-                             label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"))
+                             label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"),
+                             file=paste0("Heatmap-G5", sfx, ".html"))
        }
-       htmlwidgets::saveWidget(temp_p, paste0("Heatmap-G5", sfx, ".html"))
+       
+       #htmlwidgets::saveWidget(temp_p, paste0("Heatmap-G5", sfx, ".html"))
      } else {
        png(paste0("Heatmap-G5", sfx, ".png"), width = 2000, height = 2000, pointsize = cex.pointsize *  18)
        if(length(table(pcacolo)) > 1) {
-         hmout <- heatmap(temp, col = rev(heat.colors(50)), ColSideColors=pcacolo, RowSideColors=pcacolo)
+         hmout <- heatmap(temp, col = rev(heat.colors(50)), ColSideColors=pcacolo, RowSideColors=pcacolo, symm=T, revC=F)
        } else {
-         hmout <- heatmap(temp, col = rev(heat.colors(50)))
+         hmout <- heatmap(temp, col = rev(heat.colors(50)), symm=T, revC=F)
        }
        hmdat <- data.frame(rowInd=hmout$rowInd,seqIDInd=indsubset[pcasamps[hmout$rowInd]],seqID=seqID[indsubset[pcasamps[hmout$rowInd]]])
        write.csv(hmdat,paste0("HeatmapOrder", sfx, ".csv"),row.names=FALSE,quote=FALSE)
@@ -646,11 +709,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
         layout(title="Self-relatedness estimates",xaxis=list(title = "Using G5"), yaxis=list(title = "Using G4"))
       htmlwidgets::saveWidget(temp_p, paste0("G", sfx, "-diag.html"))
     }
-    else{
-      png(paste0("G", sfx, "-diag.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
-      plot(diag(GGBS4) ~ diag(GGBS5), col = fcolo[indsubset], main = "Self-relatedness estimates", xlab = "Using G5", ylab = "Using G4")
-      dev.off()
-    }
+    png(paste0("G", sfx, "-diag.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
+    plot(diag(GGBS4) ~ diag(GGBS5), col = fcolo[indsubset], main = "Self-relatedness estimates", xlab = "Using G5", ylab = "Using G4")
+    dev.off()
    }
   if (!gform == "chip") {
     if(withPlotly){
@@ -660,18 +721,17 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
         layout(title="Self-relatedness estimate using G5",xaxis=list(title = "Sample depth (log scale)", zeroline=FALSE, type='log'),
                yaxis=list(title = "Self-relatedness estimate using G5", zeroline=FALSE))
       htmlwidgets::saveWidget(temp_p, paste0("G", sfx, "diagdepth.html"))
-    } else{
-      png(paste0("G", sfx, "diagdepth.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
-      #plot(diag(GGBS5) ~ I(sampdepthsub + 1), col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth +1", log="x")
-      plot(diag(GGBS5) ~ sampdepthsub, col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth (log scale)", log="x")
-      dev.off()
     }
+    png(paste0("G", sfx, "diagdepth.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
+    #plot(diag(GGBS5) ~ I(sampdepthsub + 1), col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth +1", log="x")
+    plot(diag(GGBS5) ~ sampdepthsub, col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth (log scale)", log="x")
+    dev.off()
   }
   if (calclevel %in% c(2,9)) {
    png(paste0("Gcompare", sfx, ".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
-   if (gform == "chip" | nrow(samples) != nind)
+   if (gform == "chip" | !samplesOK)
      plot(upper.vec(GGBS1) ~ upper.vec(GGBS5), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", xlab = "Using G5", ylab = "Using G1")
-   if (!gform == "chip" & calclevel > 2 & nrow(samples) == nind)  
+   if (!gform == "chip" & calclevel > 2 & samplesOK)  
      pairs(cbind(upper.vec(GGBS1), upper.vec(GGBS3), upper.vec(GGBS5)), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", 
            labels = paste0("Using G", c("1", "3", "5")))
    dev.off()
@@ -686,19 +746,16 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     cat("minimum eigenvalue: ", min(eval), "\n")  #check for +ve def
     if(withPlotly){
       if(npc > 1) {
-         temp_p <- plot_ly(y=PC$x[, 2],x=PC$x[, 1], type="scatter", mode="markers",
-                           hoverinfo="text", text=hover.info, width=640 + addpixel, height=640,
-                           marker=list(size=cex.pointsize*6), color=plotly.group, symbol=plotly.group2) %>%
-           layout(xaxis=list(title="Principal component 1",zeroline=F), yaxis=list(title="Principal component 2",zeroline=F))
-         htmlwidgets::saveWidget(temp_p, paste0("PC1v2G5", sfx, ".html"))
-      } else {
-        hist(PC$x[, 1], 50)
-      }
-    } else{
+        temp_p <- plot_ly(y=PC$x[, 2],x=PC$x[, 1], type="scatter", mode="markers",
+                          hoverinfo="text", text=hover.info, width=640 + addpixel, height=640,
+                          marker=list(size=cex.pointsize*6), color=plotly.group, symbol=plotly.group2) %>%
+          layout(xaxis=list(title="Principal component 1",zeroline=F), yaxis=list(title="Principal component 2",zeroline=F))
+        htmlwidgets::saveWidget(temp_p, paste0("PC1v2G5", sfx, ".html"))
+      } 
       png(paste0("PC1v2G5", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
       if(npc > 1) {
-         plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Principal component 2")
-       } else {
+        plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Principal component 2")
+      } else {
         hist(PC$x[, 1], 50)
       }
       dev.off()
