@@ -190,6 +190,22 @@ na.zero <- function (x) {
     return(x)
 }
 
+calcp <- function(indsubset, pmethod="A") {
+ if(!pmethod == "G") pmethod <- "A"
+ if (missing(indsubset))   indsubset <- 1:nind
+ if (pmethod == "A") {
+  if (nrow(alleles) == nind) {
+   RAcountstemp <- matrix(colSums(alleles[indsubset,]), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
+   afreqs <- RAcountstemp[, 1]/rowSums(RAcountstemp)  # p for ref allele - based on # reads, not on inferred # alleles
+   } else {
+   afreqs <- NULL
+   print("Error: alleles is wrong size for pmethod A")
+   }
+  }
+ if (pmethod == "G") afreqs <- colMeans(genon[indsubset,], na.rm = TRUE)/2  # allele freq assuming genotype calls
+ afreqs
+ }
+
 GBSsummary <- function() {
  havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
  if(gform != "chip") {
@@ -209,12 +225,18 @@ GBSsummary <- function() {
    print(data.frame(indnum = u1, seqID = seqID[u1], sampdepth = sampdepth[u1]))
    }
   samp.remove(union(u0, u1))
-  if (!havedepth) { # not redone e.g. after merge
-   allelecounts <<- colSums(alleles)
-   RAcounts <<- matrix(allelecounts, ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
-   p <<- RAcounts[, 1]/rowSums(RAcounts)  # p for ref allele - based on # reads, not on inferred # alleles
-   acountmin <- 1
-   acountmax <- max(rowSums(RAcounts))
+  if (!exists("p") & exists("alleles")) { # not redone e.g. after merge
+   p <<- calcp()
+   if (is.null(p)) {
+    cat("alleles not available, using genotype method for p\n")
+    p <- calcp(pmethod="G")
+    }
+# changed to use function version, delete following lines
+#   allelecounts <<- colSums(alleles)
+#   RAcounts <<- matrix(allelecounts, ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
+#   p <<- RAcounts[, 1]/rowSums(RAcounts)  # p for ref allele - based on # reads, not on inferred # alleles
+#   acountmin <- 1
+#   acountmax <- max(rowSums(RAcounts))
    }
   if(exists("genosin")) rm(genosin)
   } #end GBS-specific
@@ -491,22 +513,6 @@ mergeSamples2 <- function(mergeIDs, indsubset) {
  }
 
 
-calcp <- function(indsubset, pmethod="A") {
- if(!pmethod == "G") pmethod <- "A"
- if (missing(indsubset))   indsubset <- 1:nind
- if (pmethod == "A") {
-  if (nrow(alleles) == nind) {
-   RAcountstemp <- matrix(colSums(alleles[indsubset,]), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
-   afreqs <- RAcountstemp[, 1]/rowSums(RAcountstemp)  # p for ref allele - based on # reads, not on inferred # alleles
-   } else {
-   afreqs <- NULL
-   print("Error: alleles is wrong size for pmethod A")
-   }
-  }
- if (pmethod == "G") afreqs <- colMeans(genon[indsubset,], na.rm = TRUE)/2  # allele freq assuming genotype calls
- afreqs
- }
-
 calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0, calclevel = 9, cocall.thresh = 0, mdsplot=FALSE,
                   withPlotly=FALSE, withHeatmaply=withPlotly, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL) {
   # sfx is text to add to GGBS5 as graph name, puse is allele freqs (all snps) to use
@@ -744,8 +750,8 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     eval <- sign(PC$d) * PC$d^2/sum(PC$d^2)
     PC$x <- PC$u %*% diag(PC$d[1:npc],nrow=npc)  # nrow to get correct behaviour when npc=1
     cat("minimum eigenvalue: ", min(eval), "\n")  #check for +ve def
-    if(withPlotly){
-      if(npc > 1) {
+    if(npc > 1) {
+     if(withPlotly){
         temp_p <- plot_ly(y=PC$x[, 2],x=PC$x[, 1], type="scatter", mode="markers",
                           hoverinfo="text", text=hover.info, width=640 + addpixel, height=640,
                           marker=list(size=cex.pointsize*6), color=plotly.group, symbol=plotly.group2) %>%
