@@ -10,6 +10,38 @@ if (!exists("cex.pointsize"))    cex.pointsize    <- 1
 if (!exists("functions.only"))   functions.only   <- FALSE
 if (!exists("outlevel"))         outlevel         <- 9
 
+# function to locate Rcpp file (assume it is in the same directory as this file and this file was 'sourced')
+pathToCppFile = function() {
+    cpp.name <- "GBS-Rcpp-functions.cpp"
+    this.file <- NULL
+    for (i in -(1:sys.nframe())) {
+        if (identical(sys.function(i), base::source)) this.file <- (normalizePath(sys.frame(i)$ofile))
+    }
+    if (!is.null(this.file)) {
+        source.dir <- dirname(this.file)
+        return(file.path(source.dir, cpp.name))
+    }
+    else {
+        # assume it is in the current working directory
+        return(cpp.name)
+    }
+}
+
+# load C++ functions
+# compiling can take ~10 seconds, so we cache the file (under ~/R/RcppCache)
+# it will only be recompiled when the C++ file changes or is moved
+have_rcpp <- FALSE
+if (require(Rcpp)) {
+    # RcppArmadillo is also required, but we don't need to load it here
+    if (is.element("RcppArmadillo", installed.packages()[,"Package"])) {
+        have_rcpp <- TRUE
+        cpp.path <- pathToCppFile()
+        cat("Loading C++ functions:", cpp.path, "\n")
+        sourceCpp(file = cpp.path, showOutput = TRUE,
+                  cacheDir = file.path(path.expand("~"), "R", "RcppCache"))
+    }
+}
+
 readGBS <- function(genofilefn = genofile) {
  if (gform == "chip") readChip(genofilefn)
  if (gform == "ANGSDcounts") readANGSD(genofilefn)
@@ -210,7 +242,12 @@ GBSsummary <- function() {
  havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
-  sampdepth.max <<- apply(depth, 1, max)
+  if (have_rcpp) {
+   sampdepth.max <<- arma_rowMaximums(depth)
+  }
+  else {
+   sampdepth.max <<- apply(depth, 1, max)
+  }
   sampdepth <<- rowMeans(depth)
   u0 <- which(sampdepth.max == 0)
   u1 <- setdiff(which(sampdepth.max == 1 | sampdepth < sampdepth.thresh), u0)
@@ -295,7 +332,15 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  l10LRT <<- -log10(exp(1)) * pchisq(LRT, 1, lower.tail = FALSE, log.p = TRUE)
 
  sampdepth <<- rowMeans(depth)  # recalc after removing SNPs and samples
- if(outlevel > 4) sampdepth.med <<- apply(depth, 1, median)
+ #if(outlevel > 4) sampdepth.med <<- apply(depth, 1, median)
+ if(outlevel > 4) {
+   if (have_rcpp) {
+     sampdepth.med <<- arma_rowMedians(depth)
+   }
+   else {
+     sampdepth.med <<- apply(depth, 1, median)
+   }
+ }
  depth0 <- rowSums(depth == 0)
  snpdepth <<- colMeans(depth)
  missrate <- sum(depth == 0)/nrow(depth)/ncol(depth)
@@ -367,6 +412,7 @@ if(!functions.only) {
 
 ################## functions
  depth2K <- function(depthvals)  1/2^depthvals   # convert depth to K value assuming binomial 
+ if (have_rcpp) depth2K <- arma_depth2K
 
  depth2Kbb <- function(depthvals, alph=Inf) {
   # convert depth to K value assuming beta-binomial with parameters alpha=beta=alph. Inf gives binomial
@@ -388,7 +434,6 @@ depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine de
  if (dmodel=="modp") depth2K <- function(depthvals) depth2Kmodp(depthvals,modp=param)
  depth2K
  }
-
 
 upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
 #seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1]  # undoc AgR function # might not get number of cols right
@@ -588,7 +633,12 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    hist(upper.vec(cocall)/nsnpsub, breaks = 50, xlab = "Co-call rate (for sample pairs)", main="", col = "grey")
    dev.off()
   lowpairs <- which(cocall/nsnpsub <= cocall.thresh & upper.tri(cocall),arr.ind=TRUE)
-  sampdepth.max <- apply(depthsub, 1, max)
+  if (have_rcpp) {
+    sampdepth.max <- arma_rowMaximums(depthsub)
+  }
+  else {
+    sampdepth.max <- apply(depthsub, 1, max)
+  }
   samp.removed <- NULL
   if(cocall.thresh >= 0) {  # remove samples which wont get self-rel
    samp.removed <- which(sampdepth.max < 2)
@@ -649,11 +699,17 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   rm(GGBS4top)
   
   genon01 <- genon0
-  genon01[depth[indsubset, snpsubset] < 2] <- 0
   P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = TRUE)
   P1 <- 1 - P0
-  P0[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
-  P1[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
+  if (have_rcpp) {
+    assignP0P1Genon01(P0, P1, genon01, usegeno, depth[indsubset, snpsubset])
+  }
+  else {
+    genon01[depth[indsubset, snpsubset] < 2] <- 0
+    P0[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
+    P1[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
+  }
+
 #  div0 <- 2 * diag(tcrossprod(P0, P1))  # rowSums version faster
   div0 <- 2 * rowSums(P0 * P1)
   Kdepth <- depth2K(depth[indsubset, snpsubset])
@@ -696,10 +752,18 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
        #htmlwidgets::saveWidget(temp_p, paste0("Heatmap-G5", sfx, ".html"))
      } else {
        png(paste0("Heatmap-G5", sfx, ".png"), width = 2000, height = 2000, pointsize = cex.pointsize *  18)
+       if (require(parallelDist)) {
+         cat("Using parallelDist function in heatmap\n")
+         distfun <- parDist
+       }
+       else {
+         cat("Using normal dist function in heatmap\n")
+         distfun <- dist
+       }
        if(length(table(pcacolo)) > 1) {
-         hmout <- heatmap(temp, col = rev(heat.colors(50)), ColSideColors=pcacolo, RowSideColors=pcacolo, symm=T, revC=F)
+         hmout <- heatmap(temp, col = rev(heat.colors(50)), ColSideColors=pcacolo, RowSideColors=pcacolo, symm=T, revC=F, distfun=distfun)
        } else {
-         hmout <- heatmap(temp, col = rev(heat.colors(50)), symm=T, revC=F)
+         hmout <- heatmap(temp, col = rev(heat.colors(50)), symm=T, revC=F, distfun=distfun)
        }
        hmdat <- data.frame(rowInd=hmout$rowInd,seqIDInd=indsubset[pcasamps[hmout$rowInd]],seqID=seqID[indsubset[pcasamps[hmout$rowInd]]])
        write.csv(hmdat,paste0("HeatmapOrder", sfx, ".csv"),row.names=FALSE,quote=FALSE)
