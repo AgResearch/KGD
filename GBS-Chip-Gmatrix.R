@@ -411,8 +411,20 @@ if(!functions.only) {
 
 
 ################## functions
- depth2K <- function(depthvals)  1/2^depthvals   # convert depth to K value assuming binomial 
- if (have_rcpp) depth2K <- arma_depth2K
+ r_depth2K <- function(depthvals)  1/2^depthvals   # convert depth to K value assuming binomial 
+ # select R or Rcpp version of depth2K depending on whether Rcpp is installed
+ if (have_rcpp) {
+     depth2K <- function(depthvals) {
+         # Rcpp version only works with matrix as input, so fallback to R version otherwise
+         if (is.matrix(depthvals)) {
+             result <- arma_depth2K(depthvals)
+         } else {
+             result <- r_depth2K(depthvals)
+         }
+     }
+ } else {
+     depth2K <- r_depth2K
+ }
 
  depth2Kbb <- function(depthvals, alph=Inf) {
   # convert depth to K value assuming beta-binomial with parameters alpha=beta=alph. Inf gives binomial
