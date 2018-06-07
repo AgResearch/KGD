@@ -421,6 +421,7 @@ if(!functions.only) {
          } else {
              result <- r_depth2K(depthvals)
          }
+         return(result)
      }
  } else {
      depth2K <- r_depth2K
