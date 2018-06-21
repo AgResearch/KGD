@@ -11,7 +11,7 @@
 // function for finding row medians (alternative to apply(depth, 1, median))
 // requires integer type matrix as input, returns list of doubles
 // [[Rcpp::export]]
-std::vector<double> arma_rowMedians(const arma::imat &depth) {
+std::vector<double> rcpp_rowMedians(const arma::imat &depth) {
     // number of rows
     const int nrows = depth.n_rows;
 
@@ -34,7 +34,7 @@ std::vector<double> arma_rowMedians(const arma::imat &depth) {
 // function for finding row maximums (alternative to apply(mat, 1, max))
 // requires integer type matrix as input, return list of integers
 // [[Rcpp::export]]
-std::vector<int> arma_rowMaximums(const arma::imat &mat) {
+std::vector<int> rcpp_rowMaximums(const arma::imat &mat) {
     const int nrows = mat.n_rows;
 
     // create vector to store the result
@@ -52,7 +52,7 @@ std::vector<int> arma_rowMaximums(const arma::imat &mat) {
 
 // C++ version of depth2K function
 // [[Rcpp::export]]
-Rcpp::NumericMatrix arma_depth2K(const Rcpp::NumericMatrix &A) {
+Rcpp::NumericMatrix rcpp_depth2K(const Rcpp::NumericMatrix &A) {
     // create the output matrix (same size as input)
     Rcpp::NumericMatrix Aout(A.rows(), A.cols());
 
@@ -69,10 +69,28 @@ Rcpp::NumericMatrix arma_depth2K(const Rcpp::NumericMatrix &A) {
     return Aout;
 }
 
+// C++ version of depth2Kmodp function
+// [[Rcpp::export]]
+Rcpp::NumericMatrix rcpp_depth2Kmodp(const Rcpp::NumericMatrix &depthvals, double modp = 0.5) {
+    // create matrix for storing the result
+    Rcpp::NumericMatrix result(depthvals.rows(), depthvals.cols());
+
+    // size of the matrix
+    const long size = depthvals.rows() * depthvals.cols();
+
+    // loop over the elements in parallel
+    #pragma omp parallel for
+    for (long i = 0; i < size; i++) {
+        double value = 0.5 * pow(modp, depthvals[i] - 1.0);
+        result[i] = (value == 0) ? 1.0 : value;
+    }
+    return result;
+}
+
 // function for setting unused values of P0, P1 and genon01 to zero
 // modifies the matrices in-place (i.e. doesn't return anything)
 // [[Rcpp::export]]
-void assignP0P1Genon01(Rcpp::NumericMatrix &P0, Rcpp::NumericMatrix &P1, Rcpp::NumericMatrix &genon01,
+void rcpp_assignP0P1Genon01(Rcpp::NumericMatrix &P0, Rcpp::NumericMatrix &P1, Rcpp::NumericMatrix &genon01,
         const Rcpp::LogicalMatrix &usegeno, const Rcpp::NumericMatrix &dsub) {
     // number of elements (assumes all inputs are the same size!)
     const long size = P0.rows() * P0.cols();

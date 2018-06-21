@@ -243,7 +243,7 @@ GBSsummary <- function() {
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
   if (have_rcpp) {
-   sampdepth.max <<- arma_rowMaximums(depth)
+   sampdepth.max <<- rcpp_rowMaximums(depth)
   }
   else {
    sampdepth.max <<- apply(depth, 1, max)
@@ -335,7 +335,7 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  #if(outlevel > 4) sampdepth.med <<- apply(depth, 1, median)
  if(outlevel > 4) {
    if (have_rcpp) {
-     sampdepth.med <<- arma_rowMedians(depth)
+     sampdepth.med <<- rcpp_rowMedians(depth)
    }
    else {
      sampdepth.med <<- apply(depth, 1, median)
@@ -417,7 +417,7 @@ if(!functions.only) {
      depth2K <- function(depthvals) {
          # Rcpp version only works with matrix as input, so fallback to R version otherwise
          if (is.matrix(depthvals)) {
-             result <- arma_depth2K(depthvals)
+             result <- rcpp_depth2K(depthvals)
          } else {
              result <- r_depth2K(depthvals)
          }
@@ -433,11 +433,25 @@ if(!functions.only) {
   }
 
 # convert depth to K value modp model. prob of seeing same allele as last time is modp (usually >= 0.5)
- depth2Kmodp <- function(depthvals, modp=0.5 ) {
+ r_depth2Kmodp <- function(depthvals, modp=0.5 ) {
   Kvals <- 0.5*modp^(depthvals-1)
   Kvals[which(depthvals==0)] <- 1
   Kvals
   }
+ # select R or Rcpp version depending on whether Rcpp is installed
+ if (have_rcpp) {
+    depth2Kmodp <- function(depthvals, modp=0.5) {
+        # Rcpp version only works with matrix as input, so fallback to R version otherwise
+        if (is.matrix(depthvals)) {
+            result <- rcpp_depth2Kmodp(depthvals, modp)
+        } else {
+            result <- r_depth2Kmodp(depthvals, modp)
+        }
+        return(result)
+    }
+ } else {
+     depth2Kmodp <- r_depth2Kmodp
+ }
 
 depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine depth2K
  if (!dmodel=="modp") dmodel <- "bb"
@@ -647,7 +661,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    dev.off()
   lowpairs <- which(cocall/nsnpsub <= cocall.thresh & upper.tri(cocall),arr.ind=TRUE)
   if (have_rcpp) {
-    sampdepth.max <- arma_rowMaximums(depthsub)
+    sampdepth.max <- rcpp_rowMaximums(depthsub)
   }
   else {
     sampdepth.max <- apply(depthsub, 1, max)
@@ -715,7 +729,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = TRUE)
   P1 <- 1 - P0
   if (have_rcpp) {
-    assignP0P1Genon01(P0, P1, genon01, usegeno, depth[indsubset, snpsubset])
+    rcpp_assignP0P1Genon01(P0, P1, genon01, usegeno, depth[indsubset, snpsubset])
   }
   else {
     genon01[depth[indsubset, snpsubset] < 2] <- 0
