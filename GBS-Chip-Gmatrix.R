@@ -404,6 +404,12 @@ colourby <- function(colgroup, groupsort=FALSE) {# undoc AgR function
  list(collabels=collabels,collist=collist,sampcol=sampcol)
  }
 
+changecol <- function(colobject,colposition,newcolour) {# undoc AgR function - provide new colours to colourby object
+ oldcolour <- colobject$collist[colposition]
+ colobject$collist[colposition] <- newcolour
+ colobject$sampcol[which(colobject$sampcol == oldcolour)] <- newcolour
+ colobject
+ }
 
 
 posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset) {
@@ -824,7 +830,7 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
   upperRel <- upper.vec(Guse)
   ID1 <- upper.vec(matrix(IDuse,nrow=length(IDuse),ncol=length(IDuse),byrow=FALSE))
   ID2 <- upper.vec(matrix(IDuse,nrow=length(IDuse),ncol=length(IDuse),byrow=TRUE))
-  df.out <- data.frame(ID1=ID1,ID2=ID2,rel=upperRel)
+  df.out <- data.frame(id1=ID1,id2=ID2,rel=upperRel)
   write.csv(df.out,paste0(outname,"-long.csv"),row.names=FALSE,quote=FALSE)
   }
  if(4 %in% outtype) {
