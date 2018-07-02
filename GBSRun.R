@@ -1,4 +1,4 @@
-#!/bin/env Rscript
+#!/usr/bin/env Rscript
 
 genofile <- "Example/HapMap.hmc.txt.gz"
 gform <- "uneak"   # uneak (default), Tassel or chip
