@@ -40,7 +40,7 @@ while line:
 	ro_pos = "" ##Needs to be defined so can check if the string is NULL
 	ao_pos = "" ##Needs to be defined so can check if the string is NULL
 	dp4_pos = "" ##Needs to be defined so can check if the string is NULL
-        empty_genotypes = ['./.', '.,.', '.', '.|.']
+	empty_genotypes = ['./.', '.,.', '.', '.|.']
 	if line.startswith('##'):
 		pass
 	elif line.startswith("#CHROM"):
