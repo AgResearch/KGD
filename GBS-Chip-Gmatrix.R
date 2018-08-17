@@ -8,7 +8,9 @@ if (!exists("hirel.thresh"))     hirel.thresh     <- 0.9
 if (!exists("triallelic.thresh")) triallelic.thresh <- 0.005  # if third allele present in higher than this proportion, then discard SNP, otherwise discard 3rd & 4th allele calls (currently only for ANGSD data)
 if (!exists("cex.pointsize"))    cex.pointsize    <- 1
 if (!exists("functions.only"))   functions.only   <- FALSE
+if (!exists("alleles.keep"))     alleles.keep     <- FALSE
 if (!exists("outlevel"))         outlevel         <- 9
+if (!exists("use.Rcpp"))         use.Rcpp         <- TRUE
 
 # function to locate Rcpp file (assume it is in the same directory as this file and this file was 'sourced')
 pathToCppFile = function() {
@@ -31,7 +33,7 @@ pathToCppFile = function() {
 # compiling can take ~10 seconds, so we cache the file (under ~/R/RcppCache)
 # it will only be recompiled when the C++ file changes or is moved
 have_rcpp <- FALSE
-if (require(Rcpp)) {
+if (require(Rcpp) & use.Rcpp) {
     # RcppArmadillo is also required, but we don't need to load it here
     if (is.element("RcppArmadillo", installed.packages()[,"Package"])) {
         have_rcpp <- TRUE
@@ -150,6 +152,7 @@ samp.remove <- function (samppos=NULL, keep=FALSE) {
     if(exists("depth.orig")) depth.orig <<- depth.orig[-samppos, ]
     if(exists("genon")) genon <<- genon[-samppos,]
     if(exists("sampdepth")) sampdepth <<- sampdepth[-samppos]
+    if(exists("alleles") & alleles.keep) alleles <- alleles[-samppos,]
     seqID <<- seqID[-samppos]
     nind <<- nind - length(samppos)
   }
@@ -227,14 +230,14 @@ calcp <- function(indsubset, pmethod="A") {
  if (missing(indsubset))   indsubset <- 1:nind
  if (pmethod == "A") {
   if (nrow(alleles) == nind) {
-   RAcountstemp <- matrix(colSums(alleles[indsubset,]), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
+   RAcountstemp <- matrix(colSums(alleles[indsubset,,drop=FALSE]), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
    afreqs <- RAcountstemp[, 1]/rowSums(RAcountstemp)  # p for ref allele - based on # reads, not on inferred # alleles
    } else {
    afreqs <- NULL
    print("Error: alleles is wrong size for pmethod A")
    }
   }
- if (pmethod == "G") afreqs <- colMeans(genon[indsubset,], na.rm = TRUE)/2  # allele freq assuming genotype calls
+ if (pmethod == "G") afreqs <- colMeans(genon[indsubset,,drop=FALSE], na.rm = TRUE)/2  # allele freq assuming genotype calls
  afreqs
  }
 
@@ -533,6 +536,7 @@ mergeSamples <- function(mergeIDs, indsubset) {
  genon.m <- trunc(genon.m-1)+1
  ID.m <- rownames(aggr.msum)
  depth.m <- rowsum(depth.orig[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE)
+ if(alleles.keep) alleles.m <- rowsum(alleles[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE) else alleles.m <- NULL
  nind.m <- nrow(genon.m)
  nseq <- rowsum(rep(1,length(indsubset)),mergeIDs) # results being merged
  seqID.m <- seqID[indsubset][match(ID.m,mergeIDs)]
@@ -547,7 +551,9 @@ mergeSamples <- function(mergeIDs, indsubset) {
  sampdepth.m <- rowMeans(depth.m)
  snpdepth.m <- colMeans(depth.m)
  pg.m <- colMeans(genon.m, na.rm = TRUE)/2  # allele freq assuming genotype calls
- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
+ mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
+ if(alleles.keep) mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, alleles=alleles.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
+ mergelist
  }
 
 mergeSamples2 <- function(mergeIDs, indsubset) {  
@@ -626,10 +632,10 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
         if(!exists(seqID))
           samp.info <- list("Sample ID"=1:length(indsubset))
         else
-          samp.info <- list("Sample ID"=seqID)
+          samp.info <- list("Sample ID"=seqID[indsubset])
       } else if(!is.list(samp.info)){
         warning("Sample information object is not a list")
-        samp.info <- list("Sample ID"=seqID)
+        samp.info <- list("Sample ID"=seqID[indsubset])
       } else if(any(unlist(lapply(samp.info,function(x) length(x)!=length(indsubset))))){
         stop("Missing or extra sample information. Check that the 'samp.info' object is correct.")
       }
@@ -754,7 +760,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   
   uhirel <- which(GGBS5 > hirel.thresh & upper.tri(GGBS5), arr.ind = TRUE)
   if (nrow(uhirel) > 0 & nsnpsub >= 999) 
-    write.csv(data.frame(Indiv1 = seqID[uhirel[, 1]], Indiv2 = seqID[uhirel[, 2]], G5rel = GGBS5[uhirel], SelfRel1 = GGBS5d[uhirel[,1]], SelfRel2 = GGBS5d[uhirel[,2]] ), 
+    write.csv(data.frame(Indiv1 = seqID[indsubset][uhirel[, 1]], Indiv2 = seqID[indsubset][uhirel[, 2]], G5rel = GGBS5[uhirel], SelfRel1 = GGBS5d[uhirel[,1]], SelfRel2 = GGBS5d[uhirel[,2]] ), 
               paste0("HighRelatedness", sfx, ".csv"), row.names = FALSE)
   if (!npc == 0 ) {
    # check for missing elements and subset to remove
