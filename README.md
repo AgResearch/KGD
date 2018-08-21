@@ -7,4 +7,4 @@ This project was supported by the Ministry of Business, Innovation and Employmen
 
 Please cite
 
-Dodds KG, et al. Construction of relatedness matrices using genotyping-by-sequencing data. BMC Genomics201516:1047. https://doi.org/10.1186/s12864-015-2252-3
+Dodds KG, et al. Construction of relatedness matrices using genotyping-by-sequencing data. BMC Genomics 2015 16:1047. https://doi.org/10.1186/s12864-015-2252-3
