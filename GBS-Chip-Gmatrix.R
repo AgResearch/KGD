@@ -11,6 +11,7 @@ if (!exists("functions.only"))   functions.only   <- FALSE
 if (!exists("alleles.keep"))     alleles.keep     <- FALSE
 if (!exists("outlevel"))         outlevel         <- 9
 if (!exists("use.Rcpp"))         use.Rcpp         <- TRUE
+if (!exists("nThreads"))         nThreads         <- 0  # 0 means use all available
 
 # function to locate Rcpp file (assume it is in the same directory as this file and this file was 'sourced')
 pathToCppFile = function() {
@@ -246,7 +247,7 @@ GBSsummary <- function() {
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
   if (have_rcpp) {
-   sampdepth.max <<- rcpp_rowMaximums(depth)
+   sampdepth.max <<- rcpp_rowMaximums(depth, nThreads)
   }
   else {
    sampdepth.max <<- apply(depth, 1, max)
@@ -338,7 +339,7 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  #if(outlevel > 4) sampdepth.med <<- apply(depth, 1, median)
  if(outlevel > 4) {
    if (have_rcpp) {
-     sampdepth.med <<- rcpp_rowMedians(depth)
+     sampdepth.med <<- rcpp_rowMedians(depth, nThreads)
    }
    else {
      sampdepth.med <<- apply(depth, 1, median)
@@ -420,7 +421,7 @@ if(!functions.only) {
      depth2K <- function(depthvals) {
          # Rcpp version only works with matrix as input, so fallback to R version otherwise
          if (is.matrix(depthvals)) {
-             result <- rcpp_depth2K(depthvals)
+             result <- rcpp_depth2K(depthvals, nThreads)
          } else {
              result <- r_depth2K(depthvals)
          }
@@ -446,7 +447,7 @@ if(!functions.only) {
     depth2Kmodp <- function(depthvals, modp=0.5) {
         # Rcpp version only works with matrix as input, so fallback to R version otherwise
         if (is.matrix(depthvals)) {
-            result <- rcpp_depth2Kmodp(depthvals, modp)
+            result <- rcpp_depth2Kmodp(depthvals, modp, nThreads)
         } else {
             result <- r_depth2Kmodp(depthvals, modp)
         }
@@ -673,7 +674,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    dev.off()
   lowpairs <- which(cocall/nsnpsub <= cocall.thresh & upper.tri(cocall),arr.ind=TRUE)
   if (have_rcpp) {
-    sampdepth.max <- rcpp_rowMaximums(depthsub)
+    sampdepth.max <- rcpp_rowMaximums(depthsub, nThreads)
   }
   else {
     sampdepth.max <- apply(depthsub, 1, max)
@@ -741,7 +742,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = TRUE)
   P1 <- 1 - P0
   if (have_rcpp) {
-    rcpp_assignP0P1Genon01(P0, P1, genon01, usegeno, depth[indsubset, snpsubset])
+    rcpp_assignP0P1Genon01(P0, P1, genon01, usegeno, depth[indsubset, snpsubset], nThreads)
   }
   else {
     genon01[depth[indsubset, snpsubset] < 2] <- 0
