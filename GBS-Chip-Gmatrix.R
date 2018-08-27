@@ -1025,11 +1025,11 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
 
 
 ## Write KGD back to VCF file
-writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0){
+writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, p=NULL){
   
   filename <- paste0(outname,".vcf")
   if(!exists("alleles"))
-    stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")  
+    stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")
   else{
     ref <- alleles[, seq(1, 2 * nsnps - 1, 2)]
     alt <- alleles[, seq(2, 2 * nsnps, 2)]
@@ -1039,6 +1039,12 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0){
     indsubset <- 1:nind
   if(missing(snpsubset))
     snpsubset <- 1:nsnps
+  if(!is.null(p)){
+    if(length(p) != length(snpsubset))
+      stop("The number of alleles frequencies is not equal to the number of SNPs")
+    else
+      p <- matrix(p, nrow=length(indsubset), ncol=length(snpsubset), byrow=T)
+  }
   ref <- ref[indsubset, snpsubset]
   alt <- alt[indsubset, snpsubset]
   genon0 <- genon[indsubset, snpsubset]
@@ -1075,10 +1081,16 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0){
   genon0[is.na(genon0)] <- -1
   gt <- sapply(as.vector(genon0), function(x) switch(x+2,"./.","1/1","0/1","0/0"))
   ## compute probs
-  compProb <- function(x) 1/2^(ref+alt)*((2-x)*ep + x*(1-ep))^ref * ((2-x)*(1-ep) + x*ep)^alt
-  paa <- compProb(2)
-  pab <- compProb(1)
-  pbb <- compProb(0)
+  if(is.null(p)){
+    compProb <- function(x) 1/2^(ref+alt)*((2-x)*ep + x*(1-ep))^ref * ((2-x)*(1-ep) + x*ep)^alt
+    paa <- compProb(2)
+    pab <- compProb(1)
+    pbb <- compProb(0)
+  } else{
+    paa <- (1-ep)^ref*ep^alt*p^2
+    pab <- (1/2)^(ref+alt)*2*p*(1-p)
+    pbb <- ep^ref*(1-ep)^alt*(1-p)^2
+  }
   psum <- paa + pab + pbb
   paa <- round(paa/psum,4)
   pab <- round(pab/psum,4)
