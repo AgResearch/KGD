@@ -1025,7 +1025,7 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
 
 
 ## Write KGD back to VCF file
-writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, p=NULL){
+writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0){
   
   filename <- paste0(outname,".vcf")
   if(!exists("alleles"))
@@ -1039,15 +1039,10 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, p=NULL)
     indsubset <- 1:nind
   if(missing(snpsubset))
     snpsubset <- 1:nsnps
-  if(!is.null(p)){
-    if(length(p) != length(snpsubset))
-      stop("The number of alleles frequencies is not equal to the number of SNPs")
-    else
-      p <- matrix(p, nrow=length(indsubset), ncol=length(snpsubset), byrow=T)
-  }
   ref <- ref[indsubset, snpsubset]
   alt <- alt[indsubset, snpsubset]
   genon0 <- genon[indsubset, snpsubset]
+  pmat <- matrix(p[snpsubset], nrow=length(indsubset), ncol=length(snpsubset), byrow=T)
   
   # Meta information
   metaInfo <- paste('##fileformat=VCFv4.3',paste0("##fileDate=",Sys.Date()),"##source=KGDpackage",
@@ -1075,30 +1070,34 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, p=NULL)
   out[,6] <- rep(".", length(snpsubset))
   out[,7] <- rep(".", length(snpsubset))
   out[,8] <- rep(".", length(snpsubset))
-  out[,9] <- rep("GT:GP:AD", length(snpsubset))
+  out[,9] <- rep("GT:GP:GL:AD", length(snpsubset))
   
   ## Compute the genotype fields
   genon0[is.na(genon0)] <- -1
   gt <- sapply(as.vector(genon0), function(x) switch(x+2,"./.","1/1","0/1","0/0"))
   ## compute probs
-  if(is.null(p)){
-    compProb <- function(x) 1/2^(ref+alt)*((2-x)*ep + x*(1-ep))^ref * ((2-x)*(1-ep) + x*ep)^alt
-    paa <- compProb(2)
-    pab <- compProb(1)
-    pbb <- compProb(0)
-  } else{
-    paa <- (1-ep)^ref*ep^alt*p^2
-    pab <- (1/2)^(ref+alt)*2*p*(1-p)
-    pbb <- ep^ref*(1-ep)^alt*(1-p)^2
-  }
+  paa <- (1-ep)^ref*ep^alt*pmat^2
+  pab <- (1/2)^(ref+alt)*2*pmat*(1-pmat)
+  pbb <- ep^ref*(1-ep)^alt*(1-pmat)^2
   psum <- paa + pab + pbb
   paa <- round(paa/psum,4)
   pab <- round(pab/psum,4)
   pbb <- round(pbb/psum,4)
+  ## compute likelihood values
+  compLike <- function(x) 1/2^(ref+alt)*((2-x)*ep + x*(1-ep))^ref * ((2-x)*(1-ep) + x*ep)^alt
+  llaa <- log10(compLike(2))
+  llab <- log10(compLike(1))
+  llbb <- log10(compLike(0))
+  llaa[which(is.infinite(llaa))] <- -1000
+  llab[which(is.infinite(llab))] <- -1000
+  llbb[which(is.infinite(llbb))] <- -1000
+  llaa <- round(llaa,4)
+  llab <- round(llab,4)
+  llbb <- round(llbb,4)
   ## Create the data part
   temp <- options()$scipen
   options(scipen=10)  #needed for formating
-  out[,-c(1:9)] <- matrix(paste(gt,paste(paa,pab,pbb,sep=","),paste(ref,alt,sep=","), sep=":"), 
+  out[,-c(1:9)] <- matrix(paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","), sep=":"), 
                           nrow=length(snpsubset), ncol=length(indsubset), byrow=T)
   options(scipen=temp)
   
