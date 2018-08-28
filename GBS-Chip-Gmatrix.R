@@ -1024,3 +1024,89 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
 # disequilibrium cut-off at -0.05
 
 
+## Write KGD back to VCF file
+writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0){
+  
+  filename <- paste0(outname,".vcf")
+  if(!exists("alleles"))
+    stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")
+  else{
+    ref <- alleles[, seq(1, 2 * nsnps - 1, 2)]
+    alt <- alleles[, seq(2, 2 * nsnps, 2)]
+  }
+  ## subset data if required
+  if(missing(indsubset))
+    indsubset <- 1:nind
+  if(missing(snpsubset))
+    snpsubset <- 1:nsnps
+  ref <- ref[indsubset, snpsubset]
+  alt <- alt[indsubset, snpsubset]
+  genon0 <- genon[indsubset, snpsubset]
+  pmat <- matrix(p[snpsubset], nrow=length(indsubset), ncol=length(snpsubset), byrow=T)
+  
+  # Meta information
+  metaInfo <- paste('##fileformat=VCFv4.3',paste0("##fileDate=",Sys.Date()),"##source=KGDpackage",
+                    '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+                    '##FORMAT=<ID=GP,Number=G,Type=Float,Description="Genotype Probability">',
+                    '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele Read Counts">\n',sep="\n")
+  cat(metaInfo, file=filename)
+  ## colnames:
+  cat(c("#CHROM", "POS", "ID", "REF","ALT","QUAL","FILTER","INFO","FORMAT", seqID[indsubset], "\n"), file=filename, append=T, sep="\t")
+  ## set up the matrix to be written
+  out <- matrix(nrow=length(snpsubset),ncol=9+length(indsubset))
+  
+  ## Compute the Data line fields
+  if(gform == "tassel"){
+    out[,1] <- chrom[snpsubset]
+    out[,2] <- pos[snpsubset]
+  }
+  else{
+    out[,1] <- SNP_Names[snpsubset]
+    out[,2] <- 1:length(snpsubset)
+  }
+  out[,3] <- rep(".", length(snpsubset))
+  out[,4] <- rep("C", length(snpsubset))
+  out[,5] <- rep("G", length(snpsubset))
+  out[,6] <- rep(".", length(snpsubset))
+  out[,7] <- rep(".", length(snpsubset))
+  out[,8] <- rep(".", length(snpsubset))
+  out[,9] <- rep("GT:GP:GL:AD", length(snpsubset))
+  
+  ## Compute the genotype fields
+  genon0[is.na(genon0)] <- -1
+  gt <- sapply(as.vector(genon0), function(x) switch(x+2,"./.","1/1","0/1","0/0"))
+  ## compute probs
+  paa <- (1-ep)^ref*ep^alt*pmat^2
+  pab <- (1/2)^(ref+alt)*2*pmat*(1-pmat)
+  pbb <- ep^ref*(1-ep)^alt*(1-pmat)^2
+  psum <- paa + pab + pbb
+  paa <- round(paa/psum,4)
+  pab <- round(pab/psum,4)
+  pbb <- round(pbb/psum,4)
+  ## compute likelihood values
+  compLike <- function(x) 1/2^(ref+alt)*((2-x)*ep + x*(1-ep))^ref * ((2-x)*(1-ep) + x*ep)^alt
+  llaa <- log10(compLike(2))
+  llab <- log10(compLike(1))
+  llbb <- log10(compLike(0))
+  llaa[which(is.infinite(llaa))] <- -1000
+  llab[which(is.infinite(llab))] <- -1000
+  llbb[which(is.infinite(llbb))] <- -1000
+  llaa <- round(llaa,4)
+  llab <- round(llab,4)
+  llbb <- round(llbb,4)
+  ## Create the data part
+  temp <- options()$scipen
+  options(scipen=10)  #needed for formating
+  out[,-c(1:9)] <- matrix(paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","), sep=":"), 
+                          nrow=length(snpsubset), ncol=length(indsubset), byrow=T)
+  options(scipen=temp)
+  
+  ## fwrite is much faster
+  if(require(data.table))
+    fwrite(split(t(out), 1:(length(indsubset)+9)), file=filename, sep="\t", append=T, nThread = 1)
+  else
+    write.table(out, file = filename, append = T, sep="\t", col.names = F, row.names=F)
+  return(invisible(NULL))
+}
+
+
