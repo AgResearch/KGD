@@ -11,7 +11,7 @@ if (!exists("functions.only"))   functions.only   <- FALSE
 if (!exists("alleles.keep"))     alleles.keep     <- FALSE
 if (!exists("outlevel"))         outlevel         <- 9
 if (!exists("use.Rcpp"))         use.Rcpp         <- TRUE
-if (!exists("nThreads"))         nThreads         <- 0  # 0 means use all available
+if (!exists("nThreads"))         nThreads         <- 4  # 0 means use all available
 
 # function to locate Rcpp file (assume it is in the same directory as this file and this file was 'sourced')
 pathToCppFile = function() {
