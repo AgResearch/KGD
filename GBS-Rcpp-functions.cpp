@@ -122,7 +122,9 @@ Rcpp::NumericMatrix rcpp_depth2Kmodp(const Rcpp::NumericMatrix &depthvals, doubl
 
 // C++ version of depth2Kbb function
 // [[Rcpp::export]]
-    Rcpp::NumericMatrix rcpp_depth2Kbb(const Rcpp::NumericMatrix & depthvals, const double alph = 9999) {
+    Rcpp::NumericMatrix rcpp_depth2Kbb(const Rcpp::NumericMatrix & depthvals, int nThreads, const double alph = 9999) {
+        // set up number of threads
+        nThreads = check_nThreads(nThreads);
         // create matrix for storing the result
         Rcpp::NumericMatrix result(depthvals.rows(), depthvals.cols());
         // size of the matrix
@@ -130,7 +132,7 @@ Rcpp::NumericMatrix rcpp_depth2Kmodp(const Rcpp::NumericMatrix &depthvals, doubl
         // precompute factor
         const double factor = 1.0/R::beta(alph, alph);
         // loop over the elements in parallel
-        #pragma omp parallel for
+        #pragma omp parallel for num_threads(nThreads)
         for (long i = 0; i < size; i++) {
             result[i] = R::beta(alph, depthvals[i] + alph) * factor;
         }

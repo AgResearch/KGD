@@ -441,7 +441,7 @@ if(!functions.only) {
         # Rcpp version only works with matrix as input, so fallback to R version otherwise
         if (is.matrix(depthvals) & alph < Inf) {
            if(alph < Inf) {
-            result <- rcpp_depth2Kbb(depthvals, alph)
+            result <- rcpp_depth2Kbb(depthvals, nThreads, alph)
             } else {
               result <- depth2K(depthvals)
             }
