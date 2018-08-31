@@ -430,10 +430,28 @@ if(!functions.only) {
      depth2K <- r_depth2K
  }
 
- depth2Kbb <- function(depthvals, alph=Inf) {
-  # convert depth to K value assuming beta-binomial with parameters alpha=beta=alph. Inf gives binomial
+# convert depth to K value assuming beta-binomial with parameters alpha=beta=alph. Inf gives binomial
+ r_depth2Kbb <- function(depthvals, alph=Inf) {
   if (alph==Inf) 1/2^depthvals else beta(alph,depthvals+alph)/beta(alph,alph)
   }
+ # select R or Rcpp version depending on whether Rcpp is installed
+ if (have_rcpp) {
+    depth2Kbb <- function(depthvals, alph=Inf) {
+        # Rcpp version only works with matrix as input, so fallback to R version otherwise
+        if (is.matrix(depthvals) & alph < Inf) {
+           if(alph < Inf) {
+            result <- rcpp_depth2Kbb(depthvals, alph)
+            } else {
+              result <- depth2K(depthvals)
+            }
+          } else {    
+            result <- r_depth2Kbb(depthvals, alph)
+        }
+        return(result)
+    }
+ } else {
+     depth2Kbb <- r_depth2Kbb
+ }
 
 # convert depth to K value modp model. prob of seeing same allele as last time is modp (usually >= 0.5)
  r_depth2Kmodp <- function(depthvals, modp=0.5 ) {
@@ -599,6 +617,9 @@ mergeSamples2 <- function(mergeIDs, indsubset) {
 
 calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0, calclevel = 9, cocall.thresh = 0, mdsplot=FALSE,
                   withPlotly=FALSE, withHeatmaply=withPlotly, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL) {
+  # example calls:
+  #   Gfull <- calcG(npc=4) 
+  #   GHWdgm.05 <- calcG(which(HWdis > -0.05),'HWdgm.05') # recalculate using Hardy-Weinberg disequilibrium cut-off at -0.05
   # sfx is text to add to GGBS5 as graph name, puse is allele freqs (all snps) to use
   # calclevel: 1: G5 only, 2: G5 + reports using G5, 3: all G, 9: all
   if (missing(snpsubset))   snpsubset <- 1:nsnps
@@ -1019,14 +1040,10 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
  }
 
 
-
-# example calls Gfull <- calcG(npc=4) GHWdgm.05 <- calcG(which(HWdis > -0.05),'HWdgm.05') # recalculate using Hardy-Weinberg
-# disequilibrium cut-off at -0.05
-
-
 ## Write KGD back to VCF file
-writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0){
-  
+writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = p, IDuse){
+  if (missing(IDuse)) IDuse <- seqID[indsubset]
+  if (is.null(outname)) outname <- "GBSdata"
   filename <- paste0(outname,".vcf")
   if(!exists("alleles"))
     stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")
@@ -1042,16 +1059,17 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0){
   ref <- ref[indsubset, snpsubset]
   alt <- alt[indsubset, snpsubset]
   genon0 <- genon[indsubset, snpsubset]
-  pmat <- matrix(p[snpsubset], nrow=length(indsubset), ncol=length(snpsubset), byrow=T)
+  pmat <- matrix(puse[snpsubset], nrow=length(indsubset), ncol=length(snpsubset), byrow=T)
   
   # Meta information
   metaInfo <- paste('##fileformat=VCFv4.3',paste0("##fileDate=",Sys.Date()),"##source=KGDpackage",
                     '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
                     '##FORMAT=<ID=GP,Number=G,Type=Float,Description="Genotype Probability">',
+                    '##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype Likelihood">',
                     '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele Read Counts">\n',sep="\n")
   cat(metaInfo, file=filename)
   ## colnames:
-  cat(c("#CHROM", "POS", "ID", "REF","ALT","QUAL","FILTER","INFO","FORMAT", seqID[indsubset], "\n"), file=filename, append=T, sep="\t")
+  cat(c("#CHROM", "POS", "ID", "REF","ALT","QUAL","FILTER","INFO","FORMAT", IDuse, "\n"), file=filename, append=T, sep="\t")
   ## set up the matrix to be written
   out <- matrix(nrow=length(snpsubset),ncol=9+length(indsubset))
   
