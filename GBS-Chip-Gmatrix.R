@@ -431,10 +431,28 @@ if(!functions.only) {
      depth2K <- r_depth2K
  }
 
- depth2Kbb <- function(depthvals, alph=Inf) {
-  # convert depth to K value assuming beta-binomial with parameters alpha=beta=alph. Inf gives binomial
+# convert depth to K value assuming beta-binomial with parameters alpha=beta=alph. Inf gives binomial
+ r_depth2Kbb <- function(depthvals, alph=Inf) {
   if (alph==Inf) 1/2^depthvals else beta(alph,depthvals+alph)/beta(alph,alph)
   }
+ # select R or Rcpp version depending on whether Rcpp is installed
+ if (have_rcpp) {
+    depth2Kbb <- function(depthvals, alph=Inf) {
+        # Rcpp version only works with matrix as input, so fallback to R version otherwise
+        if (is.matrix(depthvals) & alph < Inf) {
+           if(alph < Inf) {
+            result <- rcpp_depth2Kbb(depthvals, alph)
+            } else {
+              result <- depth2K(depthvals)
+            }
+          } else {    
+            result <- r_depth2Kbb(depthvals, alph)
+        }
+        return(result)
+    }
+ } else {
+     depth2Kbb <- r_depth2Kbb
+ }
 
 # convert depth to K value modp model. prob of seeing same allele as last time is modp (usually >= 0.5)
  r_depth2Kmodp <- function(depthvals, modp=0.5 ) {
@@ -600,6 +618,9 @@ mergeSamples2 <- function(mergeIDs, indsubset) {
 
 calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0, calclevel = 9, cocall.thresh = 0, mdsplot=FALSE,
                   withPlotly=FALSE, withHeatmaply=withPlotly, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL) {
+  # example calls:
+  #   Gfull <- calcG(npc=4) 
+  #   GHWdgm.05 <- calcG(which(HWdis > -0.05),'HWdgm.05') # recalculate using Hardy-Weinberg disequilibrium cut-off at -0.05
   # sfx is text to add to GGBS5 as graph name, puse is allele freqs (all snps) to use
   # calclevel: 1: G5 only, 2: G5 + reports using G5, 3: all G, 9: all
   if (missing(snpsubset))   snpsubset <- 1:nsnps
@@ -1020,8 +1041,91 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
  }
 
 
-
-# example calls Gfull <- calcG(npc=4) GHWdgm.05 <- calcG(which(HWdis > -0.05),'HWdgm.05') # recalculate using Hardy-Weinberg
-# disequilibrium cut-off at -0.05
+## Write KGD back to VCF file
+writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = p, IDuse){
+  if (missing(IDuse)) IDuse <- seqID[indsubset]
+  if (is.null(outname)) outname <- "GBSdata"
+  filename <- paste0(outname,".vcf")
+  if(!exists("alleles"))
+    stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")
+  else{
+    ref <- alleles[, seq(1, 2 * nsnps - 1, 2)]
+    alt <- alleles[, seq(2, 2 * nsnps, 2)]
+  }
+  ## subset data if required
+  if(missing(indsubset))
+    indsubset <- 1:nind
+  if(missing(snpsubset))
+    snpsubset <- 1:nsnps
+  ref <- ref[indsubset, snpsubset]
+  alt <- alt[indsubset, snpsubset]
+  genon0 <- genon[indsubset, snpsubset]
+  pmat <- matrix(puse[snpsubset], nrow=length(indsubset), ncol=length(snpsubset), byrow=T)
+  
+  # Meta information
+  metaInfo <- paste('##fileformat=VCFv4.3',paste0("##fileDate=",Sys.Date()),"##source=KGDpackage",
+                    '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+                    '##FORMAT=<ID=GP,Number=G,Type=Float,Description="Genotype Probability">',
+                    '##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype Likelihood">',
+                    '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele Read Counts">\n',sep="\n")
+  cat(metaInfo, file=filename)
+  ## colnames:
+  cat(c("#CHROM", "POS", "ID", "REF","ALT","QUAL","FILTER","INFO","FORMAT", IDuse, "\n"), file=filename, append=T, sep="\t")
+  ## set up the matrix to be written
+  out <- matrix(nrow=length(snpsubset),ncol=9+length(indsubset))
+  
+  ## Compute the Data line fields
+  if(gform == "tassel"){
+    out[,1] <- chrom[snpsubset]
+    out[,2] <- pos[snpsubset]
+  }
+  else{
+    out[,1] <- SNP_Names[snpsubset]
+    out[,2] <- 1:length(snpsubset)
+  }
+  out[,3] <- rep(".", length(snpsubset))
+  out[,4] <- rep("C", length(snpsubset))
+  out[,5] <- rep("G", length(snpsubset))
+  out[,6] <- rep(".", length(snpsubset))
+  out[,7] <- rep(".", length(snpsubset))
+  out[,8] <- rep(".", length(snpsubset))
+  out[,9] <- rep("GT:GP:GL:AD", length(snpsubset))
+  
+  ## Compute the genotype fields
+  genon0[is.na(genon0)] <- -1
+  gt <- sapply(as.vector(genon0), function(x) switch(x+2,"./.","1/1","0/1","0/0"))
+  ## compute probs
+  paa <- (1-ep)^ref*ep^alt*pmat^2
+  pab <- (1/2)^(ref+alt)*2*pmat*(1-pmat)
+  pbb <- ep^ref*(1-ep)^alt*(1-pmat)^2
+  psum <- paa + pab + pbb
+  paa <- round(paa/psum,4)
+  pab <- round(pab/psum,4)
+  pbb <- round(pbb/psum,4)
+  ## compute likelihood values
+  compLike <- function(x) 1/2^(ref+alt)*((2-x)*ep + x*(1-ep))^ref * ((2-x)*(1-ep) + x*ep)^alt
+  llaa <- log10(compLike(2))
+  llab <- log10(compLike(1))
+  llbb <- log10(compLike(0))
+  llaa[which(is.infinite(llaa))] <- -1000
+  llab[which(is.infinite(llab))] <- -1000
+  llbb[which(is.infinite(llbb))] <- -1000
+  llaa <- round(llaa,4)
+  llab <- round(llab,4)
+  llbb <- round(llbb,4)
+  ## Create the data part
+  temp <- options()$scipen
+  options(scipen=10)  #needed for formating
+  out[,-c(1:9)] <- matrix(paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","), sep=":"), 
+                          nrow=length(snpsubset), ncol=length(indsubset), byrow=T)
+  options(scipen=temp)
+  
+  ## fwrite is much faster
+  if(require(data.table))
+    fwrite(split(t(out), 1:(length(indsubset)+9)), file=filename, sep="\t", append=T, nThread = 1)
+  else
+    write.table(out, file = filename, append = T, sep="\t", col.names = F, row.names=F)
+  return(invisible(NULL))
+}
 
 

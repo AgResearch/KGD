@@ -120,6 +120,24 @@ Rcpp::NumericMatrix rcpp_depth2Kmodp(const Rcpp::NumericMatrix &depthvals, doubl
     return result;
 }
 
+// C++ version of depth2Kbb function
+// [[Rcpp::export]]
+    Rcpp::NumericMatrix rcpp_depth2Kbb(const Rcpp::NumericMatrix & depthvals, const double alph = 9999) {
+        // create matrix for storing the result
+        Rcpp::NumericMatrix result(depthvals.rows(), depthvals.cols());
+        // size of the matrix
+        const long size = depthvals.rows() * depthvals.cols();
+        // precompute factor
+        const double factor = 1.0/R::beta(alph, alph);
+        // loop over the elements in parallel
+        #pragma omp parallel for
+        for (long i = 0; i < size; i++) {
+            result[i] = R::beta(alph, depthvals[i] + alph) * factor;
+        }
+        return result;
+    }
+
+
 // function for setting unused values of P0, P1 and genon01 to zero
 // modifies the matrices in-place (i.e. doesn't return anything)
 // [[Rcpp::export]]
