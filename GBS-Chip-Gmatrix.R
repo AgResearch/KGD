@@ -45,6 +45,77 @@ if (require(Rcpp) & use.Rcpp) {
     }
 }
 
+### depth2K functions
+ r_depth2K <- function(depthvals)  1/2^depthvals   # convert depth to K value assuming binomial 
+ # select R or Rcpp version of depth2K depending on whether Rcpp is installed
+ if (have_rcpp) {
+     depth2K <- function(depthvals) {
+         # Rcpp version only works with matrix as input, so fallback to R version otherwise
+         if (is.matrix(depthvals)) {
+             result <- rcpp_depth2K(depthvals, nThreads)
+         } else {
+             result <- r_depth2K(depthvals)
+         }
+         return(result)
+     }
+ } else {
+     depth2K <- r_depth2K
+ }
+
+# convert depth to K value assuming beta-binomial with parameters alpha=beta=alph. Inf gives binomial
+ r_depth2Kbb <- function(depthvals, alph=Inf) {
+  if (alph==Inf) 1/2^depthvals else beta(alph,depthvals+alph)/beta(alph,alph)
+  }
+ # select R or Rcpp version depending on whether Rcpp is installed
+ if (have_rcpp) {
+    depth2Kbb <- function(depthvals, alph=Inf) {
+        # Rcpp version only works with matrix as input, so fallback to R version otherwise
+        if (is.matrix(depthvals) & alph < Inf) {
+           if(alph < Inf) {
+            result <- rcpp_depth2Kbb(depthvals, nThreads, alph)
+            } else {
+              result <- depth2K(depthvals)
+            }
+          } else {    
+            result <- r_depth2Kbb(depthvals, alph)
+        }
+        return(result)
+    }
+ } else {
+     depth2Kbb <- r_depth2Kbb
+ }
+
+# convert depth to K value modp model. prob of seeing same allele as last time is modp (usually >= 0.5)
+ r_depth2Kmodp <- function(depthvals, modp=0.5 ) {
+  Kvals <- 0.5*modp^(depthvals-1)
+  Kvals[which(depthvals==0)] <- 1
+  Kvals
+  }
+ # select R or Rcpp version depending on whether Rcpp is installed
+ if (have_rcpp) {
+    depth2Kmodp <- function(depthvals, modp=0.5) {
+        # Rcpp version only works with matrix as input, so fallback to R version otherwise
+        if (is.matrix(depthvals)) {
+            result <- rcpp_depth2Kmodp(depthvals, modp, nThreads)
+        } else {
+            result <- r_depth2Kmodp(depthvals, modp)
+        }
+        return(result)
+    }
+ } else {
+     depth2Kmodp <- r_depth2Kmodp
+ }
+
+depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine depth2K
+ if (!dmodel=="modp") dmodel <- "bb"
+ if (missing(param) & dmodel=="bb") param <- Inf
+ if (missing(param) & dmodel=="modp") param <- 0.5
+ if (dmodel=="bb") depth2K <- function(depthvals) depth2Kbb(depthvals,alph=param)
+ if (dmodel=="modp") depth2K <- function(depthvals) depth2Kmodp(depthvals,modp=param)
+ depth2K
+ }
+
+
 readGBS <- function(genofilefn = genofile) {
  if (gform == "chip") readChip(genofilefn)
  if (gform == "ANGSDcounts") readANGSD(genofilefn)
@@ -199,19 +270,22 @@ finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=pale
   dev.off()
  }
 
-HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig", finpalette=palette.aquatic, finxlim=c(0,0.5), finylim=c(-0.25, 0.25)) {
+HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig", finpalette=palette.aquatic, finxlim=c(0,0.5), finylim=c(-0.25, 0.25), 
+                      llname="log10 LRT", sortord=ll) {
  sigtrans <- function(x) round(sqrt(x) * 40/max(sqrt(x))) + 1  # to compress colour scale at higher LRT
  sigpoints <- c(0.5, 5, 50, 100)  # legend points
  transpoints <- sigtrans(sigpoints)
  maxtrans <- sigtrans(max(ll))
  legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol = 1))
+ plotord <- 1:length(MAF)
+ if(!is.null(sortord)) plotord <- order(sortord)
  png(paste0(plotname,".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
   if(whitedist(finpalette) < 25) par(bg="grey")
-  plot(HWdiseq ~ MAF, col = finpalette[sigtrans(ll)], cex = 0.8, xlab = "Minor Allele Frequency", 
+  plot(HWdiseq[plotord] ~ MAF[plotord], col = finpalette[sigtrans(ll)][plotord], cex = 0.8, xlab = "Minor Allele Frequency", 
        ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5, xlim=finxlim, ylim=finylim)
   rasterImage(legend_image, 0.05, -0.2, 0.07, -0.1)
   text(x = 0.1, y = -0.2 + 0.1 * transpoints/maxtrans, labels = format(sigpoints))
-  text(x = 0.075, y = -0.075, labels = "log10 LRT", cex = 1.2)
+  text(x = 0.075, y = -0.075, labels = llname, cex = 1.2)
   dev.off()
  }
 
@@ -334,6 +408,11 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  maf <<- ifelse(p1 > 0.5, p2, p1)
  l10p <- -log10(exp(1)) * pchisq(x2, 1, lower.tail = FALSE, log.p = TRUE)
  l10LRT <<- -log10(exp(1)) * pchisq(LRT, 1, lower.tail = FALSE, log.p = TRUE)
+ snpK <- depth2K(snpdepth)
+ esnphetstar <- mean(2*p1*p2*(1-2*snpK),na.rm=TRUE)
+ osnphetstar <- nab/(naa + nab + nbb)
+ x2star <<- 2*(1-snpK)*(1-osnphetstar/esnphetstar)^2
+ l10pstar <<- -log10(exp(1)) * pchisq(x2star, 1, lower.tail = FALSE, log.p = TRUE)
 
  sampdepth <<- rowMeans(depth)  # recalc after removing SNPs and samples
  #if(outlevel > 4) sampdepth.med <<- apply(depth, 1, median)
@@ -387,15 +466,20 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
    dev.off()
   }
  finplot()
+ HWsigplot(ll=l10pstar,llname="log10p X2*", finpalette=colorRampPalette(c("deepskyblue2","red"))(50))
+ if(outlevel > 9) HWsigplot(plotname="HWdisMAFsig-raw")
  if(outlevel > 4) {
-  HWsigplot()
   png("LRT-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-  qqplot(qchisq(ppoints(nsnps), df = 1), LRT, main = "Hardy-Weinberg LRT Q-Q Plot", xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), 
+   qqplot(qchisq(ppoints(nsnps), df = 1), LRT, main = "Hardy-Weinberg LRT Q-Q Plot", xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), 
          ylab = "Sample Quantiles")
-  dev.off()
+   dev.off()
   png("LRT-hist.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-  hist(LRT, breaks = 50, col = "grey", xlab = "Hardy Weinberg likelihood ratio test statistic")
-  dev.off()
+   hist(LRT, breaks = 50, col = "grey", xlab = "Hardy Weinberg likelihood ratio test statistic")
+   dev.off()
+  png("X2star-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
+   qqplot(qchisq(ppoints(nsnps), df = 1), x2star, main = parse(text = "Hardy-Weinberg ~~ X^2*~~  Q-Q Plot"), 
+          xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), ylab = "Sample Quantiles")
+   dev.off()
   }
  mafplot()
  depth.orig <<- depth  # see next, but actually need original depths for plots, summaries etc
@@ -415,75 +499,6 @@ if(!functions.only) {
 
 
 ################## functions
- r_depth2K <- function(depthvals)  1/2^depthvals   # convert depth to K value assuming binomial 
- # select R or Rcpp version of depth2K depending on whether Rcpp is installed
- if (have_rcpp) {
-     depth2K <- function(depthvals) {
-         # Rcpp version only works with matrix as input, so fallback to R version otherwise
-         if (is.matrix(depthvals)) {
-             result <- rcpp_depth2K(depthvals, nThreads)
-         } else {
-             result <- r_depth2K(depthvals)
-         }
-         return(result)
-     }
- } else {
-     depth2K <- r_depth2K
- }
-
-# convert depth to K value assuming beta-binomial with parameters alpha=beta=alph. Inf gives binomial
- r_depth2Kbb <- function(depthvals, alph=Inf) {
-  if (alph==Inf) 1/2^depthvals else beta(alph,depthvals+alph)/beta(alph,alph)
-  }
- # select R or Rcpp version depending on whether Rcpp is installed
- if (have_rcpp) {
-    depth2Kbb <- function(depthvals, alph=Inf) {
-        # Rcpp version only works with matrix as input, so fallback to R version otherwise
-        if (is.matrix(depthvals) & alph < Inf) {
-           if(alph < Inf) {
-            result <- rcpp_depth2Kbb(depthvals, nThreads, alph)
-            } else {
-              result <- depth2K(depthvals)
-            }
-          } else {    
-            result <- r_depth2Kbb(depthvals, alph)
-        }
-        return(result)
-    }
- } else {
-     depth2Kbb <- r_depth2Kbb
- }
-
-# convert depth to K value modp model. prob of seeing same allele as last time is modp (usually >= 0.5)
- r_depth2Kmodp <- function(depthvals, modp=0.5 ) {
-  Kvals <- 0.5*modp^(depthvals-1)
-  Kvals[which(depthvals==0)] <- 1
-  Kvals
-  }
- # select R or Rcpp version depending on whether Rcpp is installed
- if (have_rcpp) {
-    depth2Kmodp <- function(depthvals, modp=0.5) {
-        # Rcpp version only works with matrix as input, so fallback to R version otherwise
-        if (is.matrix(depthvals)) {
-            result <- rcpp_depth2Kmodp(depthvals, modp, nThreads)
-        } else {
-            result <- r_depth2Kmodp(depthvals, modp)
-        }
-        return(result)
-    }
- } else {
-     depth2Kmodp <- r_depth2Kmodp
- }
-
-depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine depth2K
- if (!dmodel=="modp") dmodel <- "bb"
- if (missing(param) & dmodel=="bb") param <- Inf
- if (missing(param) & dmodel=="modp") param <- 0.5
- if (dmodel=="bb") depth2K <- function(depthvals) depth2Kbb(depthvals,alph=param)
- if (dmodel=="modp") depth2K <- function(depthvals) depth2Kmodp(depthvals,modp=param)
- depth2K
- }
-
 upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
 #seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1]  # undoc AgR function # might not get number of cols right
 seq2samp <- function(seqIDvec=seqID) sapply(strsplit(seqIDvec,split="_"),"[",1)
@@ -875,6 +890,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     eval <- sign(PC$d) * PC$d^2/sum(PC$d^2)
     PC$x <- PC$u %*% diag(PC$d[1:npc],nrow=npc)  # nrow to get correct behaviour when npc=1
     cat("minimum eigenvalue: ", min(eval), "\n")  #check for +ve def
+    cat("first",2*npc,"eigenvalues:",eval[1:(2*npc)],"\n")
     if(npc > 1) {
      if(withPlotly){
         temp_p <- plot_ly(y=PC$x[, 2],x=PC$x[, 1], type="scatter", mode="markers",
