@@ -477,7 +477,7 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
    hist(LRT, breaks = 50, col = "grey", xlab = "Hardy Weinberg likelihood ratio test statistic")
    dev.off()
   png("X2star-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-   qqplot(qchisq(ppoints(nsnps), df = 1), x2star, main = parse(text = "Hardy-Weinberg ~~ X^2*~~  Q-Q Plot"), 
+   qqplot(qchisq(ppoints(nsnps), df = 1), x2star, main = parse(text = "Hardy-Weinberg ~~ X^2~~ '* Q-Q Plot'"), 
           xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), ylab = "Sample Quantiles")
    dev.off()
   }
