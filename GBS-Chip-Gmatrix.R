@@ -1091,7 +1091,7 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = 
   out <- matrix(nrow=length(snpsubset),ncol=9+length(indsubset))
   
   ## Compute the Data line fields
-  if(gform == "tassel"){
+  if(gform == "Tassel"){
     out[,1] <- chrom[snpsubset]
     out[,2] <- pos[snpsubset]
   }
@@ -1140,7 +1140,7 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = 
   if(require(data.table))
     fwrite(split(t(out), 1:(length(indsubset)+9)), file=filename, sep="\t", append=T, nThread = 1)
   else
-    write.table(out, file = filename, append = T, sep="\t", col.names = F, row.names=F)
+    write.table(out, file = filename, append = T, sep="\t", col.names = F, row.names=F, quote=F)
   return(invisible(NULL))
 }
 
