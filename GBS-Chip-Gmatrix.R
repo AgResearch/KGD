@@ -272,8 +272,10 @@ finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=pale
 
 HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig", finpalette=palette.aquatic, finxlim=c(0,0.5), finylim=c(-0.25, 0.25), 
                       llname="log10 LRT", sortord=ll) {
- sigtrans <- function(x) round(sqrt(x) * 40/max(sqrt(x))) + 1  # to compress colour scale at higher LRT
- sigpoints <- c(0.5, 5, 50, 100)  # legend points
+ sigtrans <- function(x) round(sqrt(x) * 40/max(sqrt(ll))) + 1  # to compress colour scale at higher LRT
+ sigpoints <- c(0.5, 2, 5, 20, 50, 200, 500)  # legend points
+ sigpoints <- sigpoints[union(1:2,which(sigpoints < max(ll)))]
+ if(length(sigpoints) > 5) sigpoints <- sigpoints[seq(1,length(sigpoints),2)]
  transpoints <- sigtrans(sigpoints)
  maxtrans <- sigtrans(max(ll))
  legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol = 1))
@@ -408,10 +410,11 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  maf <<- ifelse(p1 > 0.5, p2, p1)
  l10p <- -log10(exp(1)) * pchisq(x2, 1, lower.tail = FALSE, log.p = TRUE)
  l10LRT <<- -log10(exp(1)) * pchisq(LRT, 1, lower.tail = FALSE, log.p = TRUE)
- snpK <- depth2K(snpdepth)
- esnphetstar <- mean(2*p1*p2*(1-2*snpK),na.rm=TRUE)
+ Kdepth <- depth2K(depth)
+ Kdepth[which(depth==0)] <- NA
+ esnphetstar <- 2*p1*p2*(1-2*colMeans(Kdepth,na.rm=TRUE))
  osnphetstar <- nab/(naa + nab + nbb)
- x2star <<- 2*(1-snpK)*(1-osnphetstar/esnphetstar)^2
+ x2star <<- colSums(1-Kdepth,na.rm=TRUE)*(1-osnphetstar/esnphetstar)^2
  l10pstar <<- -log10(exp(1)) * pchisq(x2star, 1, lower.tail = FALSE, log.p = TRUE)
 
  sampdepth <<- rowMeans(depth)  # recalc after removing SNPs and samples
@@ -811,16 +814,16 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
      temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = TRUE))
      if(withHeatmaply){
        if(length(table(pcacolo)) > 1) {
-         temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
+         temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=TRUE,
                              width=1000, height=1000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
-                             labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
+                             labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=FALSE,
                              label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"),
                              ColSideColors=pcacolo, RowSideColors=pcacolo,
                              file=paste0("Heatmap-G5", sfx, ".html")) %>% layout(width=1000,height=1000)
        } else{
-         temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
+         temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=TRUE,
                              width=1000, height=1000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
-                             labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
+                             labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=FALSE,
                              label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"),
                              file=paste0("Heatmap-G5", sfx, ".html"))
        }
@@ -837,9 +840,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
          distfun <- dist
        }
        if(length(table(pcacolo)) > 1) {
-         hmout <- heatmap(temp, col = rev(heat.colors(50)), ColSideColors=pcacolo, RowSideColors=pcacolo, symm=T, revC=F, distfun=distfun)
+         hmout <- heatmap(temp, col = rev(heat.colors(50)), ColSideColors=pcacolo, RowSideColors=pcacolo, symm=TRUE, revC=FALSE, distfun=distfun)
        } else {
-         hmout <- heatmap(temp, col = rev(heat.colors(50)), symm=T, revC=F, distfun=distfun)
+         hmout <- heatmap(temp, col = rev(heat.colors(50)), symm=TRUE, revC=FALSE, distfun=distfun)
        }
        hmdat <- data.frame(rowInd=hmout$rowInd,seqIDInd=indsubset[pcasamps[hmout$rowInd]],seqID=seqID[indsubset[pcasamps[hmout$rowInd]]])
        write.csv(hmdat,paste0("HeatmapOrder", sfx, ".csv"),row.names=FALSE,quote=FALSE)
@@ -896,7 +899,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
         temp_p <- plot_ly(y=PC$x[, 2],x=PC$x[, 1], type="scatter", mode="markers",
                           hoverinfo="text", text=hover.info, width=640 + addpixel, height=640,
                           marker=list(size=cex.pointsize*6), color=plotly.group, symbol=plotly.group2) %>%
-          layout(xaxis=list(title="Principal component 1",zeroline=F), yaxis=list(title="Principal component 2",zeroline=F))
+          layout(xaxis=list(title="Principal component 1",zeroline=FALSE), yaxis=list(title="Principal component 2",zeroline=FALSE))
         htmlwidgets::saveWidget(temp_p, paste0("PC1v2G5", sfx, ".html"))
       } 
       png(paste0("PC1v2G5", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
@@ -918,7 +921,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
         temp_p <- plot_ly(x=mdsout[,1],y=mdsout[,2], type="scatter", mode="markers", marker=list(size=cex.pointsize*6),
                           width=640 + addpixel, height=640 + addpixel,
                           hoverinfo="text", text=hover.info, color=plotly.group, symbol=plotly.group2) %>%
-          layout(xaxis=list(title="MDS coordinate 1",zeroline=F), yaxis=list(title="MDS coordinate 2",zeroline=F))
+          layout(xaxis=list(title="MDS coordinate 1",zeroline=FALSE), yaxis=list(title="MDS coordinate 2",zeroline=FALSE))
         htmlwidgets::saveWidget(temp_p, paste0("MDS1v2G5", sfx, ".html"))
       }
       else{
@@ -1076,7 +1079,7 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = 
   ref <- ref[indsubset, snpsubset]
   alt <- alt[indsubset, snpsubset]
   genon0 <- genon[indsubset, snpsubset]
-  pmat <- matrix(puse[snpsubset], nrow=length(indsubset), ncol=length(snpsubset), byrow=T)
+  pmat <- matrix(puse[snpsubset], nrow=length(indsubset), ncol=length(snpsubset), byrow=TRUE)
   
   # Meta information
   metaInfo <- paste('##fileformat=VCFv4.3',paste0("##fileDate=",Sys.Date()),"##source=KGDpackage",
@@ -1086,7 +1089,7 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = 
                     '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele Read Counts">\n',sep="\n")
   cat(metaInfo, file=filename)
   ## colnames:
-  cat(c("#CHROM", "POS", "ID", "REF","ALT","QUAL","FILTER","INFO","FORMAT", IDuse, "\n"), file=filename, append=T, sep="\t")
+  cat(c("#CHROM", "POS", "ID", "REF","ALT","QUAL","FILTER","INFO","FORMAT", IDuse, "\n"), file=filename, append=TRUE, sep="\t")
   ## set up the matrix to be written
   out <- matrix(nrow=length(snpsubset),ncol=9+length(indsubset))
   
@@ -1133,14 +1136,14 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = 
   temp <- options()$scipen
   options(scipen=10)  #needed for formating
   out[,-c(1:9)] <- matrix(paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","), sep=":"), 
-                          nrow=length(snpsubset), ncol=length(indsubset), byrow=T)
+                          nrow=length(snpsubset), ncol=length(indsubset), byrow=TRUE)
   options(scipen=temp)
   
   ## fwrite is much faster
   if(require(data.table))
-    fwrite(split(t(out), 1:(length(indsubset)+9)), file=filename, sep="\t", append=T, nThread = 1)
+    fwrite(split(t(out), 1:(length(indsubset)+9)), file=filename, sep="\t", append=TRUE, nThread = 1)
   else
-    write.table(out, file = filename, append = T, sep="\t", col.names = F, row.names=F, quote=F)
+    write.table(out, file = filename, append = T, sep="\t", col.names = F, row.names=FALSE, quote=FALSE)
   return(invisible(NULL))
 }
 
