@@ -18,7 +18,12 @@ pathToCppFile = function() {
     cpp.name <- "GBS-Rcpp-functions.cpp"
     this.file <- NULL
     for (i in -(1:sys.nframe())) {
-        if (identical(sys.function(i), base::source)) this.file <- (normalizePath(sys.frame(i)$ofile))
+        if (identical(sys.function(i), base::source)) {
+            f <- sys.frame(i)
+            if (!f$chdir)
+                this.file <- normalizePath(f$ofile)
+            break
+        }
     }
     if (!is.null(this.file)) {
         source.dir <- dirname(this.file)
