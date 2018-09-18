@@ -276,13 +276,13 @@ finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=pale
  }
 
 HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig", finpalette=palette.aquatic, finxlim=c(0,0.5), finylim=c(-0.25, 0.25), 
-                      llname="log10 LRT", sortord=ll) {
- sigtrans <- function(x) round(sqrt(x) * 40/max(sqrt(ll))) + 1  # to compress colour scale at higher LRT
+                      llname="-log10 LRT", sortord=ll) {
+ sigtrans <- function(x) round(sqrt(x) * 40/max(sqrt(ll),na.rm=TRUE)) + 1  # to compress colour scale at higher LRT
  sigpoints <- c(0.5, 2, 5, 20, 50, 200, 500)  # legend points
- sigpoints <- sigpoints[union(1:2,which(sigpoints < max(ll)))]
+ sigpoints <- sigpoints[union(1:2,which(sigpoints < max(ll,na.rm=TRUE)))]
  if(length(sigpoints) > 5) sigpoints <- sigpoints[seq(1,length(sigpoints),2)]
  transpoints <- sigtrans(sigpoints)
- maxtrans <- sigtrans(max(ll))
+ maxtrans <- sigtrans(max(ll,na.rm=TRUE))
  legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol = 1))
  plotord <- 1:length(MAF)
  if(!is.null(sortord)) plotord <- order(sortord)
@@ -474,7 +474,7 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
    dev.off()
   }
  finplot()
- HWsigplot(ll=l10pstar,llname="log10p X2*", finpalette=colorRampPalette(c("deepskyblue2","red"))(50))
+ HWsigplot(ll=l10pstar,llname="-log10p X2*", finpalette=colorRampPalette(c("deepskyblue2","red"))(50))
  if(outlevel > 9) HWsigplot(plotname="HWdisMAFsig-raw")
  if(outlevel > 4) {
   png("LRT-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
