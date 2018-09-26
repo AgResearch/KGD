@@ -1067,11 +1067,12 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
 
 ## Write KGD back to VCF file
 writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = p, IDuse){
-  if (missing(IDuse)) IDuse <- seqID[indsubset]
   if (is.null(outname)) outname <- "GBSdata"
   filename <- paste0(outname,".vcf")
   if(!exists("alleles"))
     stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")
+  else if(is.null(alleles))
+    stop("Allele matrix object `alleles` is set to NULL.")
   else{
     ref <- alleles[, seq(1, 2 * nsnps - 1, 2)]
     alt <- alleles[, seq(2, 2 * nsnps, 2)]
@@ -1081,6 +1082,7 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = 
     indsubset <- 1:nind
   if(missing(snpsubset))
     snpsubset <- 1:nsnps
+  if (missing(IDuse)) IDuse <- seqID[indsubset]
   ref <- ref[indsubset, snpsubset]
   alt <- alt[indsubset, snpsubset]
   genon0 <- genon[indsubset, snpsubset]
