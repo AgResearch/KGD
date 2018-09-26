@@ -1109,7 +1109,7 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = 
     out[,1] <- SNP_Names[snpsubset]
     out[,2] <- 1:length(snpsubset)
   }
-  out[,3] <- rep(".", length(snpsubset))
+  out[,3] <- SNP_Names[snpsubset]
   out[,4] <- rep("C", length(snpsubset))
   out[,5] <- rep("G", length(snpsubset))
   out[,6] <- rep(".", length(snpsubset))
