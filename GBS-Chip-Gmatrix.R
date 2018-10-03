@@ -245,9 +245,7 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
    if(exists("genon")) genon <<- genon[, -snppos]
    if(exists("chrom")) chrom <<- chrom[-snppos]
    if(exists("pos")) pos <<- pos[-snppos]
-   if (gform == "chip") {
-    genon <<- genon[, -snppos]
-   } else {
+   if (!gform == "chip") {
      uremovea <- sort(c(2 * snppos, 2 * snppos - 1))  # allele positions
      if(exists("RAcounts")) RAcounts <<- RAcounts[-snppos, ]
      alleles <<- alleles[, -uremovea]
