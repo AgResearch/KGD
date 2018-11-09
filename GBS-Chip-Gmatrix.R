@@ -945,6 +945,7 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
  if (is.list(Guse)) {
   if(!"G5" %in% names(Guse)) stop("Guse is a list without a G5")
   if("PC" %in% names(Guse)) PCtemp <- Guse$PC
+  if("samp.removed" %in% names(Guse)) samp.removed <- Guse$samp.removed
   Guse <- Guse$G5
   Gname <- "G5"
   }     
@@ -990,6 +991,7 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
   colnames(PCtemp$x) <- paste0("PC",1:ncol(PCtemp$x))
   PCout <- data.frame(IDuse); colnames(PCout) <- IDname
   if(!is.null(metadf)) PCout <- metadf   #cbind(PCout,metadf)
+  if(length(samp.removed) > 0) PCout <- PCout[-samp.removed,,drop=FALSE]
   PCout <- cbind(PCout,PCtemp$x)
   write.csv(PCout,paste0(outname,"-PC.csv"),row.names=FALSE,quote=FALSE)
   }
