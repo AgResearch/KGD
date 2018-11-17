@@ -417,7 +417,8 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  Kdepth[which(depth==0)] <- NA
  esnphetstar <- 2*p1*p2*(1-2*colMeans(Kdepth,na.rm=TRUE))
  osnphetstar <- nab/(naa + nab + nbb)
- x2star <<- colSums(1-Kdepth,na.rm=TRUE)*(1-osnphetstar/esnphetstar)^2
+# x2star <<- colSums(1-Kdepth,na.rm=TRUE)*(1-osnphetstar/esnphetstar)^2 
+ x2star <<- colSums(1-2*Kdepth,na.rm=TRUE)*(1-osnphetstar/esnphetstar)^2 # corrected Nov 2018
  l10pstar <<- -log10(exp(1)) * pchisq(x2star, 1, lower.tail = FALSE, log.p = TRUE)
 
  sampdepth <<- rowMeans(depth)  # recalc after removing SNPs and samples
