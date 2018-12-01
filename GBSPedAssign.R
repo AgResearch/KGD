@@ -12,7 +12,8 @@ if (!exists("emmdiff.thresh2"))  emmdiff.thresh2 <-0  # alternate parent-pair ba
 if (!exists("inb.thresh"))   inb.thresh  <- 0.2       # par relatedness - 2 * inbreeding
 if (!exists("minr4inb"))     minr4inb    <- NULL      # par relatedness - inbreeding
 if (!exists("boota.thresh")) boota.thresh <- 99       # assignment threshold
-if (!exists("mindepth.mm")) mindepth.mm <- 1            # changed to 1 to coincide to change to using exp mm rate
+if (!exists("mindepth.mm")) mindepth.mm <- 1          # changed to 1 to coincide to change to using exp mm rate
+if (!exists("matchmethod")) matchmethod <- "rel"      # choose best 2 parents based on "rel" or "EMM"
 if (!exists("indsubset")) indsubset <- seq_along(seqID)
 if (!exists("snpsubset")) snpsubset <- seq(nsnps)
 if (!exists("depth.min")) depth.min <- 0    # for bootstrapping
@@ -32,6 +33,7 @@ cat("Parentage parameter settings\n----------------------------\n rel.threshF\t"
     "\n depth.max\t",depth.max," (for bootstrapping)",
     "\n nboot\t\t",nboot,
     "\n boot.thresh\t",boot.thresh," (relatedness difference to invoke bootstrapping)",
+    "\n matchmethod\t",matchmethod,
     "\n")
 if(length(indsubset) != nrow(eval(parse(text = GCheck)))) {
  OK4ped <- FALSE
@@ -71,6 +73,42 @@ mismatch.par <- function(offspring.id, par.id) {
    ug <- which(pi==0)
    if(length(ug)>0) expmm[ug] <- P[ug] *(ptemp[ug]*Ko[ug] + (1-ptemp[ug])*Kp[ug] + Kp[ug]*Ko[ug] ) / ((1-ptemp[ug])^2+2*P[ug]*Ko[ug])
    exp.mmrate[ioffspring] <- mean(expmm,na.rm=TRUE)
+  }
+  mmrate <- nmismatch/ncompare
+  list(mmrate=mmrate,ncompare=ncompare,exp.mmrate=exp.mmrate)
+}
+
+cemult <- function(x,A) t(x*t(A))  # columnwise elementwise mult of A by x (usually length(x) = nrow(A))
+ceadd  <- function(x,A) t(x+t(A))  # columnwise elementwise add  of A by x (usually length(x) = nrow(A))
+
+mismatch.par.comb <- function(offspring.id, par.id) {
+  # ids as in the pedigree file, all combs of offspring and parent (for given parent type)
+  noffspring <- length(offspring.id)
+  nmismatch <- ncompare <- exp.mmrate <- matrix(NA, nrow=noffspring,ncol=length(par.id))
+  opos <- match(pedinfo$seqID[match(offspring.id, pedinfo$IndivID)], seqID)
+  ppos <- match(pedinfo$seqID[match(par.id, pedinfo$IndivID)], seqID)
+  depthj <- depth.orig[ppos, ]
+  Kpall  <-  depth2K(depthj)
+  for (ioffspring in 1:noffspring) {
+   depthi <- depth.orig[opos[ioffspring], ]
+   usnp <- intersect(snpsubset,which(depthi >= mindepth.mm)) 
+   pi <- genon[opos[ioffspring], usnp]/2
+   pj <- genon[ppos, usnp]/2
+   Ko  <-  depth2K(depthi[usnp])
+   Kp  <-  Kpall[,usnp]
+   nmismatch[ioffspring,] <- rowSums((abs(matrix(pi,nrow=nrow(pj),ncol=ncol(pj),byrow=TRUE) - pj) == 1),na.rm=TRUE)
+   ncompare[ioffspring,] <- rowSums(!is.na(pj)) 
+   ptemp <- puse[usnp]
+   P <- ptemp*(1-ptemp)
+   expmm <- matrix(NA,ncol=length(usnp),nrow=length(par.id))
+   ug <- which(pi==1)
+   if(length(ug)>0) expmm[,ug] <- cemult(P[ug]/ (ptemp[ug]^2+2*P[ug]*Ko[ug]), ceadd((1-ptemp[ug])*Ko[ug],cemult(ptemp[ug],Kp[,ug])  + cemult(Ko[ug],Kp[,ug])) ) 
+   ug <- which(pi==0.5)
+   if(length(ug)>0) expmm[,ug] <- 0
+   ug <- which(pi==0)
+   if(length(ug)>0) expmm[,ug] <- cemult(P[ug]/ ((1-ptemp[ug])^2+2*P[ug]*Ko[ug]) , ceadd(ptemp[ug]*Ko[ug], cemult((1-ptemp[ug]),Kp[,ug]) + cemult(Ko[ug],Kp[,ug]) )) 
+   expmm[which(is.na(pj) | (depthj[,usnp] < mindepth.mm)) ] <- NA
+   exp.mmrate[ioffspring,] <- rowMeans(expmm,na.rm=TRUE)
   }
   mmrate <- nmismatch/ncompare
   list(mmrate=mmrate,ncompare=ncompare,exp.mmrate=exp.mmrate)
@@ -137,16 +175,29 @@ parmatch <- function(partype, Gmatrix) {
   cbind(pedinfo, matchinfo)
 }
 
-bestmatch <- function(ospos, parpos, Guse, partype) {
+bestmatch <- function(ospos, parpos, Guse, partype, matchcriterion = "rel") {
+  #matchcriterion == "EMM" added later, but made to work exactly the same (will redo EMM for best 2 later)
+  if(!matchcriterion == "EMM") matchcriterion <- "rel"
   if (missing(partype)) partype <- "Par"
   if(length(parpos) > 0 ) {
    diag(Guse) <- -1     # prevent self-parenting
    parchk <- Guse[ospos, parpos,drop=FALSE]
-   maxpos <- apply(parchk, 1, which.max)
-   parchktemp <- parchk
-   parchktemp[cbind(1:nrow(parchk), maxpos)] <- -1
-   maxpos.2 <- apply(parchktemp, 1, which.max)
-   rm(parchktemp)
+   if(matchcriterion == "rel") {
+    maxpos <- apply(parchk, 1, which.max)
+    parchktemp <- parchk
+    parchktemp[cbind(1:nrow(parchk), maxpos)] <- -1
+    maxpos.2 <- apply(parchktemp, 1, which.max)
+    rm(parchktemp)
+    }
+   if(matchcriterion == "EMM") {
+    offspringID.bm <- pedinfo$IndivID[match(seqID[indsubset][ospos],pedinfo$seqID)]
+    parGroupID.bm <- pedinfo$IndivID[match(seqID[indsubset][parpos],pedinfo$seqID)]
+    mm.bm <- mismatch.par.comb(offspringID.bm,parGroupID.bm)
+    EMMchk <- with(mm.bm,mmrate-exp.mmrate)
+    maxpos <- apply(EMMchk, 1, which.min)
+    EMMchk[cbind(1:nrow(EMMchk), maxpos)] <- 1
+    maxpos.2 <- apply(EMMchk, 1, which.min)
+    }
    maxrel <- cbind(parchk[cbind(1:nrow(parchk), maxpos)], parchk[cbind(1:nrow(parchk), maxpos.2)])
    rel12 <- Guse[cbind(parpos[maxpos],parpos[maxpos.2])]
    out.df <- data.frame(seqID[indsubset][ospos], seqID[indsubset][parpos[maxpos]], seqID[indsubset][parpos[maxpos.2]], 
@@ -173,7 +224,7 @@ groupmatch <- function(Guse, partype) {
       ParGroupseqID <- with(pedinfo, seqID[match(ParGroupID, IndivID)])
       offspringpos <- match(offspringseqID, seqID[indsubset])
       parpos <- match(ParGroupseqID, seqID[indsubset])
-      gmatch <- bestmatch(offspringpos, parpos, Guse, partype)
+      gmatch <- bestmatch(offspringpos, parpos, Guse, partype, matchcriterion = matchmethod)
       if (g == 1) allgmatch <- gmatch else allgmatch <- rbind(allgmatch, gmatch)
       }
     allgmatch$IndivID <- pedinfo$IndivID[match(allgmatch$seqID, pedinfo$seqID)]
