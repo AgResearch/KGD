@@ -93,7 +93,7 @@ if (require(Rcpp) & use.Rcpp) {
 # convert depth to K value modp model. prob of seeing same allele as last time is modp (usually >= 0.5)
  r_depth2Kmodp <- function(depthvals, modp=0.5 ) {
   Kvals <- 0.5*modp^(depthvals-1)
-  Kvals[which(depthvals==0)] <- 1
+  Kvals[depthvals==0] <- 1
   Kvals
   }
  # select R or Rcpp version depending on whether Rcpp is installed
@@ -225,11 +225,11 @@ samp.remove <- function (samppos=NULL, keep=FALSE) {
  if(keep) samppos <- setdiff(1:nind,samppos)
  if(length(samppos)>0) {
     if(gform != "chip") alleles <<- alleles[-samppos, ]
+    if(gform == "chip" & exists("alleles") & alleles.keep) alleles <- alleles[-samppos,]
     if(exists("depth")) depth <<- depth[-samppos, ]
     if(exists("depth.orig")) depth.orig <<- depth.orig[-samppos, ]
     if(exists("genon")) genon <<- genon[-samppos,]
     if(exists("sampdepth")) sampdepth <<- sampdepth[-samppos]
-    if(exists("alleles") & alleles.keep) alleles <- alleles[-samppos,]
     seqID <<- seqID[-samppos]
     nind <<- nind - length(samppos)
   }
@@ -238,9 +238,9 @@ samp.remove <- function (samppos=NULL, keep=FALSE) {
 snp.remove <- function(snppos=NULL, keep=FALSE) {
  if(keep) snppos <- setdiff(1:nsnps,snppos)
  if (length(snppos) > 0) {
-   p <<- p[-snppos]
-   nsnps <<- length(p)
    SNP_Names <<- SNP_Names[-snppos]
+   nsnps <<- length(SNP_Names)
+   if(exists("p")) p <<- p[-snppos]
    if(exists("depth")) depth <<- depth[, -snppos]
    if(exists("genon")) genon <<- genon[, -snppos]
    if(exists("chrom")) chrom <<- chrom[-snppos]
@@ -414,7 +414,7 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  l10p <- -log10(exp(1)) * pchisq(x2, 1, lower.tail = FALSE, log.p = TRUE)
  l10LRT <<- -log10(exp(1)) * pchisq(LRT, 1, lower.tail = FALSE, log.p = TRUE)
  Kdepth <- depth2K(depth)
- Kdepth[which(depth==0)] <- NA
+ Kdepth[depth==0] <- NA
  esnphetstar <- 2*p1*p2*(1-2*colMeans(Kdepth,na.rm=TRUE))
  osnphetstar <- nab/(naa + nab + nbb)
 # x2star <<- colSums(1-Kdepth,na.rm=TRUE)*(1-osnphetstar/esnphetstar)^2 
@@ -474,6 +474,10 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
   }
  finplot()
  HWsigplot(ll=l10pstar,llname="-log10p X2*", finpalette=colorRampPalette(c("deepskyblue2","red"))(50))
+ png("X2star-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
+  qqplot(qchisq(ppoints(nsnps), df = 1), x2star, main = parse(text = "Hardy-Weinberg ~~ X^2~~ '* Q-Q Plot'"), 
+         xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), ylab = "Sample Quantiles")
+  dev.off()
  if(outlevel > 9) HWsigplot(plotname="HWdisMAFsig-raw")
  if(outlevel > 4) {
   png("LRT-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
@@ -482,10 +486,6 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
    dev.off()
   png("LRT-hist.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
    hist(LRT, breaks = 50, col = "grey", xlab = "Hardy Weinberg likelihood ratio test statistic")
-   dev.off()
-  png("X2star-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-   qqplot(qchisq(ppoints(nsnps), df = 1), x2star, main = parse(text = "Hardy-Weinberg ~~ X^2~~ '* Q-Q Plot'"), 
-          xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), ylab = "Sample Quantiles")
    dev.off()
   }
  mafplot()
@@ -507,24 +507,38 @@ if(!functions.only) {
 
 ################## functions
 upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
-#seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1]  # undoc AgR function # might not get number of cols right
+
+################## undoc AgR functions
+#seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1] # might not get number of cols right
 seq2samp <- function(seqIDvec=seqID) sapply(strsplit(seqIDvec,split="_"),"[",1)
-colourby <- function(colgroup, groupsort=FALSE) {# undoc AgR function
+
+colourby <- function(colgroup, groupsort=FALSE,maxlight=1) {
+ #maxlight is maximum lightness between 0 and 1
  collabels <- unique(colgroup)
  if(groupsort) collabels <- sort(collabels)
  ncol <- length(collabels)
  collist <- rainbow(ncol)
+ lightness <- colSums( col2rgb(collist))/(3*255)
+ collist <- rgb(t(col2rgb(collist) %*% diag(pmin(lightness,rep(maxlight,length(lightness))) / lightness)), maxColorValue = 255)
 # if(ncol > 8 ) collist[seq(2,ncol,2)] <-  rgb(t(col2rgb(collist[seq(2,ncol,2)]))/1.5,maxColorValue = 255)  # darken every 2nd one
  if(ncol > 8 ) collist[seq(2,ncol,2)] <-  rgb((t(col2rgb(collist[seq(2,ncol,2)]))+matrix(127,ncol=3,nrow=floor(ncol/2)))/2,maxColorValue = 255)  # darken every 2nd one
  sampcol <- collist[match(colgroup,collabels)]
  list(collabels=collabels,collist=collist,sampcol=sampcol)
  }
 
-changecol <- function(colobject,colposition,newcolour) {# undoc AgR function - provide new colours to colourby object
+changecol <- function(colobject,colposition,newcolour) {# provide new colours to colourby object
  oldcolour <- colobject$collist[colposition]
  colobject$collist[colposition] <- newcolour
  colobject$sampcol[which(colobject$sampcol == oldcolour)] <- newcolour
  colobject
+ }
+
+colkey <- function(colobj,sfx="",srt.lab=0) {  # plot a key for colours
+ png(paste0("ColourKey",sfx,".png"),height=240)
+ nlevels <- length(colobj$collabels)
+ plot( 1:nlevels, rep(1,nlevels),col=colobj$collist,pch=16, cex=1.5,ylab="", axes=FALSE,xlab="")
+ text(labels=colobj$collabels,x=1:nlevels,y=0.8,srt=srt.lab)
+ dev.off()
  }
 
 
@@ -542,12 +556,12 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset) {
  for (i in seq_along(multiIDs)) {
   thisID <- multiIDs[i]
   thispos <- which(mergeIDs==thisID)
-  thisG <- Guse[thispos,thispos]
+  thisG <- Guse[indsubset,indsubset][thispos,thispos]
   selfrel <- mean(diag(thisG))
   meanrel <- mean(upper.vec(thisG))
   minrel <- min(upper.vec(thisG))
-  meandepth <- mean(sampdepth[Gindsubset][thispos])
-  mindepth <- min(sampdepth[Gindsubset][thispos])
+  meandepth <- mean(sampdepth[Gindsubset][indsubset][thispos])
+  mindepth <- min(sampdepth[Gindsubset][indsubset][thispos])
   meanCR <- mean( 1 - rowSums(depthsub[thispos,,drop=FALSE] == 0)/nsnps )
   posCstats <- rbind(posCstats, data.frame(mergeID=thisID,nresults=length(thispos),selfrel=selfrel,meanrel=meanrel,minrel=minrel,meandepth=meandepth,mindepth=mindepth,meanCR=meanCR))
   ulorel <- which(thisG < 1 & thisG - selfrel <= hirel.thresh - 1 & upper.tri(thisG), arr.ind = TRUE)
@@ -639,7 +653,7 @@ mergeSamples2 <- function(mergeIDs, indsubset) {
 
 
 calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0, calclevel = 9, cocall.thresh = 0, mdsplot=FALSE,
-                  withPlotly=FALSE, withHeatmaply=withPlotly, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL) {
+                  mindepth.idr = 0.1, withPlotly=FALSE, withHeatmaply=withPlotly, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL) {
   # example calls:
   #   Gfull <- calcG(npc=4) 
   #   GHWdgm.05 <- calcG(which(HWdis > -0.05),'HWdgm.05') # recalculate using Hardy-Weinberg disequilibrium cut-off at -0.05
@@ -694,6 +708,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   }
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
+  if (sum(dim(depth) != dim(depth.orig)) >0 ) cat("Warning: depth and depth.orig are different dimensions\n")
   depthsub <- depth.orig[indsubset, snpsubset]
   if(min(depth) < 2) depth[depth < 2] <- 1.1        # in case got here without executing this
   cat("Calculating G matrix, analysis code:", sfx, "\n")
@@ -879,7 +894,15 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     #plot(diag(GGBS5) ~ I(sampdepthsub + 1), col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth +1", log="x")
     plot(diag(GGBS5) ~ sampdepthsub, col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth (log scale)", log="x")
     dev.off()
-  }
+    #Slippery slope
+    uss <- which(sampdepthsub >= mindepth.idr)
+    if(length(uss) > 0) {
+     rellm <- lm(diag(GGBS5)[uss] ~  log(sampdepthsub[uss]))
+     slipslope <- coef(rellm)[2]
+     pval <- anova(rellm)[1,"Pr(>F)"]
+     cat("Self-Rel vs log(depth) regression = ", signif(slipslope,3)," p = ",signif(pval,3)," (min depth = ",mindepth.idr,")\n",sep="")
+     }
+   }
   if (calclevel %in% c(2,9)) {
    png(paste0("Gcompare", sfx, ".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
    if (gform == "chip" | !samplesOK)
@@ -1004,16 +1027,18 @@ regpanel <- function(x,y,nvars=3, ...) {
  usr <- par("usr"); on.exit(par(usr))
  par(usr = c(0, 1, 0, 1))
  if(nvars==2)  par(usr = c(-1.5, 1, 0, 2.5))  # use lower RHS
- regn <- summary(lm(x ~ y)) # reverse order to match plot
- regneqn <- paste0("y = ",signif(regn$coefficients[1,1],3),"\n (SE ",signif(regn$coefficients[1,2],2),")\n + ",
-                          signif(regn$coefficients[2,1],3),"x\n (SE ",signif(regn$coefficients[2,2],2),")")
- regnsign <- sign(regn$coefficients[2,1])
- reqnn <- paste0("n = ",sum(regn$df[1:2]))
- reqn <- paste0("r = ",signif(regnsign * sqrt(regn$r.squared),3))
- textcex <- 0.3 + 2/(nvars^.75)   # need to make smaller when more panels
- text(0.5,0.7,labels=regneqn,cex=textcex)
- text(0.5,0.22,labels=reqnn,cex=textcex)
- text(0.5,0.1,labels=reqn,cex=textcex)
+ if(length(na.omit(x*y)) > 1 & var(x,na.rm=TRUE) > 0 & var(y,na.rm = TRUE)) {
+  regn <- summary(lm(x ~ y)) # reverse order to match plot
+  regneqn <- paste0("y = ",signif(regn$coefficients[1,1],3),"\n (SE ",signif(regn$coefficients[1,2],2),")\n + ",
+                           signif(regn$coefficients[2,1],3),"x\n (SE ",signif(regn$coefficients[2,2],2),")")
+  regnsign <- sign(regn$coefficients[2,1])
+  reqnn <- paste0("n = ",sum(regn$df[1:2]))
+  reqn <- paste0("r = ",signif(regnsign * sqrt(regn$r.squared),3))
+  textcex <- 0.3 + 2/(nvars^.75)   # need to make smaller when more panels
+  text(0.5,0.7,labels=regneqn,cex=textcex)
+  text(0.5,0.22,labels=reqnn,cex=textcex)
+  text(0.5,0.1,labels=reqn,cex=textcex)
+  }
  }
 
 GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotname = "", whichplot="both", doBA=FALSE, ...) {
@@ -1023,6 +1048,7 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
  if (length(IDlist) != nG) stop("ID list different length to G list")
  if (nG < 2) stop("Nothing to compare")
  allID <- unique(unlist(IDlist))
+ for(iG in 1:nG) if(sum(duplicated(IDlist[[iG]])) > 0) cat("Warning: Duplicated IDs for ",Gnames[iG],"\n")
  if(whichplot %in% c("both","diag")) {
   gcompare <- diag(Glist[[1]])[match(allID,IDlist[[1]])]
   for(iG in 2:nG)  gcompare <- cbind(gcompare,diag(Glist[[iG]])[match(allID,IDlist[[iG]])])
@@ -1065,9 +1091,16 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
  invisible(NULL)
  }
 
+## function to use in writeVCF
+genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref, alt
+  nobj <- length(vec)/6
+  outstr <-  paste(vec[1:nobj],paste(vec[nobj+(1:nobj)],vec[2*nobj+(1:nobj)],vec[3*nobj+(1:nobj)],sep=","), 
+                   paste(vec[4*nobj+(1:nobj)],vec[5*nobj+(1:nobj)],vec[6*nobj+(1:nobj)],sep=","), 
+                   paste(vec[7*nobj+(1:nobj)],vec[8*nobj+(1:nobj)],sep=","), sep=":")
+  }
 
 ## Write KGD back to VCF file
-writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = p, IDuse){
+writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0, puse = p, IDuse){
   if (is.null(outname)) outname <- "GBSdata"
   filename <- paste0(outname,".vcf")
   if(!exists("alleles"))
@@ -1084,6 +1117,7 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = 
   if(missing(snpsubset))
     snpsubset <- 1:nsnps
   if (missing(IDuse)) IDuse <- seqID[indsubset]
+  is.big <- (as.numeric(length(indsubset)) * length(snpsubset) > 2^31-1 )
   ref <- ref[indsubset, snpsubset]
   alt <- alt[indsubset, snpsubset]
   genon0 <- genon[indsubset, snpsubset]
@@ -1118,9 +1152,6 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = 
   out[,8] <- rep(".", length(snpsubset))
   out[,9] <- rep("GT:GP:GL:AD", length(snpsubset))
   
-  ## Compute the genotype fields
-  genon0[is.na(genon0)] <- -1
-  gt <- sapply(as.vector(genon0), function(x) switch(x+2,"./.","1/1","0/1","0/0"))
   ## compute probs
   paa <- (1-ep)^ref*ep^alt*pmat^2
   pab <- (1/2)^(ref+alt)*2*pmat*(1-pmat)
@@ -1134,17 +1165,25 @@ writeVCF <- function(indsubset=NULL, snpsubset=NULL, outname=NULL, ep=0, puse = 
   llaa <- log10(compLike(2))
   llab <- log10(compLike(1))
   llbb <- log10(compLike(0))
-  llaa[which(is.infinite(llaa))] <- -1000
-  llab[which(is.infinite(llab))] <- -1000
-  llbb[which(is.infinite(llbb))] <- -1000
+  llaa[is.infinite(llaa)] <- -1000
+  llab[is.infinite(llab)] <- -1000
+  llbb[is.infinite(llbb)] <- -1000
   llaa <- round(llaa,4)
   llab <- round(llab,4)
   llbb <- round(llbb,4)
   ## Create the data part
   temp <- options()$scipen
   options(scipen=10)  #needed for formating
-  out[,-c(1:9)] <- matrix(paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","), sep=":"), 
-                          nrow=length(snpsubset), ncol=length(indsubset), byrow=TRUE)
+  ## Compute the genotype fields
+  genon0[is.na(genon0)] <- -1
+  if (is.big) {
+   gt <- apply(genon0+2, 2, function(x) c("./.","1/1","0/1","0/0")[x])
+   out2[,-c(1:9)] <- apply(cbind(gt,paa,pab,pbb,llaa,llab,llbb,ref,alt),1,genostring)
+   } else {
+   gt <- sapply(as.vector(genon0), function(x) switch(x+2,"./.","1/1","0/1","0/0"))
+   out[,-c(1:9)] <- matrix(paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","), sep=":"), 
+                           nrow=length(snpsubset), ncol=length(indsubset), byrow=TRUE)
+   }
   options(scipen=temp)
   
   ## fwrite is much faster
