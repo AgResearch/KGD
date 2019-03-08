@@ -433,7 +433,7 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  }
  depth0 <- rowSums(depth == 0)
  snpdepth <<- colMeans(depth)
- missrate <- sum(depth == 0)/nrow(depth)/ncol(depth)
+ missrate <- sum(as.numeric(depth == 0))/nrow(depth)/ncol(depth)
  cat("Proportion of missing genotypes: ", missrate, "Callrate:", 1-missrate,"\n")
 
  callrate <- 1 - rowSums(depth == 0)/nsnps  # sample callrate, after removing SNPs, samples 
@@ -771,7 +771,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   
   sampdepthsub <- rowMeans(depthsub)
   # depth0sub <- rowSums(depthsub==0) snpdepthsub <- colMeans(depthsub) snpdepthsub.non0 <- colSums(depthsub>0)/nrow(depthsub)
-  missrate <- sum(depthsub == 0)/nrow(depthsub)/ncol(depthsub)
+  missrate <- sum(as.numeric(depthsub == 0))/nrow(depthsub)/ncol(depthsub)
   cat("Proportion of missing genotypes: ", missrate, "Callrate:", 1-missrate,"\n")
   # callratesub <- 1-rowSums(depthsub==0)/nsnpsub
   cat("Mean sample depth:", mean(sampdepthsub), "\n")
@@ -1100,7 +1100,7 @@ genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref
   }
 
 ## Write KGD back to VCF file
-writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0, puse = p, IDuse){
+writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse){
   if (is.null(outname)) outname <- "GBSdata"
   filename <- paste0(outname,".vcf")
   if(!exists("alleles"))
