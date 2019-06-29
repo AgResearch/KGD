@@ -3,13 +3,13 @@ sampdepth.thresh <- 0.3
 cex.pointsize <- 1.2
 functions.only <- TRUE
 sink("GBSParDeerOut.txt")
-source("/home/doddsk/GBS/Code/GBS-Chip-Gmatrix.R")
+source("GBS-Chip-Gmatrix.R")
 readTassel()
 outlevel <- 1  # reduced QC output
 GBSsummary()
 
-pedfile <- "../DeerPedGBS.csv"
-groupsfile <- "../Ped-Groups.csv"
+pedfile <- "DeerPedGBS.csv"
+groupsfile <- "Ped-Groups.csv"
 
 breed <- read.table(text=seqID,sep="_",stringsAsFactors=FALSE)[,1]
 fcolo <- c("darkblue","darkred")[match(breed,c("W","R"))]
@@ -19,7 +19,7 @@ GHW <- calcG(npc=4,snpsubset=snpsubset,sfx="RWHW")
 G5 <- GHW$G5
 GCheck <- "G5"
 set.seed(230985)  # to get same bootstrap results if rerun
-source("/home/doddsk/GBS/Code/GBSPedAssign.R")
+source("GBSPedAssign.R")
 write.csv(BothMatches,"BothMatchesRW.csv",row.names=FALSE,quote=FALSE) # Combined breeds 
 
 dir.create("W")
@@ -34,9 +34,9 @@ GCheck <- "G5W"
 puse <- pW
 indsubset <- indW
 rm(minr4inb)
-pedfile <- "../../DeerPedGBS.csv"
-groupsfile <- "../../Ped-Groups.csv"
-source("/home/doddsk/GBS/Code/GBSPedAssign.R")
+pedfile <- "../DeerPedGBS.csv"
+groupsfile <- "../Ped-Groups.csv"
+source("GBSPedAssign.R")
 MatchesW <- BothMatches
 write.csv(MatchesW,"BothMatchesW.csv",row.names=FALSE,quote=FALSE) 
 
@@ -68,7 +68,7 @@ GCheck <- "G5R"
 puse <- pR
 indsubset <- indR
 rm(minr4inb)
-source("/home/doddsk/GBS/Code/GBSPedAssign.R")
+source("GBSPedAssign.R")
 MatchesR <- BothMatches
 write.csv(MatchesR,"BothMatchesR.csv",row.names=FALSE,quote=FALSE) 
 
