@@ -26,6 +26,7 @@ cat("Parentage parameter settings\n----------------------------\n rel.threshF\t"
     "\n emm.thresh\t",emm.thresh,
     "\n emm.thresh2\t",emm.thresh2,
     "\n emmdiff.thresh2\t",emmdiff.thresh2,
+    "\n mindepth.mm\t",mindepth.mm,
     "\n inb.thresh\t",inb.thresh," (parent relatedness v inbreeding)",
     "\n minr4inb\t",minr4inb,
     "\n boota.thresh\t",boota.thresh,
@@ -158,9 +159,11 @@ parmatch <- function(partype, Gmatrix) {
   offspringpos <- match(pedinfo$seqID, seqID[indsubset])  # all in pedigree file considered as offspring
   parpos <- match(ParseqID, seqID[indsubset])
   ParRel <- Gmatrix[cbind(offspringpos, parpos)]
-  ParMatch <- (ParRel > ifelse(partype == "Father", rel.threshF,rel.threshM))
+  Parmm <- mismatch.par(pedinfo$IndivID,pedinfo[, paste0(partype, "ID")])
+  ParEMM <- Parmm$mmrate - Parmm$exp.mmrate
+  ParMatch <- (ParRel > ifelse(partype == "Father", rel.threshF,rel.threshM) & ParEMM < emm.thresh)
   png(paste0(partype, "Verify.png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
-   pairs(cbind(ParRel, offspringpos, parpos), labels = c("Relatedness", "Offspring order", paste(partype, "order")))
+   pairs(cbind(ParRel, ParEMM, offspringpos, parpos), labels = c("Relatedness", "EMM", "Offspring order", paste(partype, "order")))
    dev.off()
   ncompare <- sum(!is.na(ParMatch))
   nmatch <- sum(ParMatch, na.rm = TRUE)
@@ -170,8 +173,8 @@ parmatch <- function(partype, Gmatrix) {
     cat("Mean relatedness for", partype, "matches", format(mean(ParRel[which(ParMatch)]), digits = 3), "\n")
   if (ncompare > nmatch) 
     cat("Mean relatedness for", partype, "non-matches", format(mean(ParRel[which(!ParMatch)]), digits = 3), "\n")
-  matchinfo <- data.frame(ParRel, ParMatch)
-  names(matchinfo) <- paste0(partype, c("Rel", "Match"))
+  matchinfo <- data.frame(ParRel, ParEMM, ParMatch)
+  names(matchinfo) <- paste0(partype, c("Rel", "EMM", "Match"))
   cbind(pedinfo, matchinfo)
 }
 
@@ -372,6 +375,22 @@ groupmatch <- function(Guse, partype) {
   }
 }
 
+ssbbmm <- function(bbpar,uuse=uY) {
+ depth2K <<- depth2Kchoose (dmodel="bb", bbpar)
+ mmstatsbb <- mismatch.2par(BothMatches$IndivID,BothMatches$BestFatherMatch, BothMatches$BestMotherMatch)
+ mmssbb <- sum((mmstatsbb$mmrate-mmstatsbb$exp.mmrate)[uuse]^2)
+ cat("bb param = ",bbpar,"ss = ",mmssbb,"\n")
+ mmssbb
+ }
+
+ssmpmm <- function(mppar,uuse=uY) {
+ depth2K <<- depth2Kchoose (dmodel="modp", mppar)
+ mmstatsmp <- mismatch.2par(BothMatches$IndivID,BothMatches$BestFatherMatch, BothMatches$BestMotherMatch)
+ mmssmp <- sum((mmstatsmp$mmrate-mmstatsmp$exp.mmrate)[uuse]^2)
+ cat("mp param = ",mppar,"ss = ",mmssmp,"\n")
+ mmssmp
+ }
+
 addtagIDs <- function(sampinfo,indvar,tagvar,matchtype="both") {
   matchtype <- tolower(matchtype)
   if(matchtype=="both") pedresults <- BothMatches
@@ -390,6 +409,27 @@ addtagIDs <- function(sampinfo,indvar,tagvar,matchtype="both") {
   pedresults
  }
 
+bestparPCA <- function(Gobj,sfx="",keypos=NULL) {
+ plotch <- assign.pch[match(BothMatches$BothAssign,assign.rank)]
+ uf <- match(seqID,BothMatches$seqID)
+ uo <- match(BothMatches$seqID,seqID)
+ nprog=length(uo)
+ pchuse <- plotch[uf]
+ pchuse[is.na(pchuse)] <- 16
+ png(paste0("PC-BestParents",sfx,".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+  with(Gobj$PC,  plot(x[, 2] ~ x[, 1], cex = 1, col = fcolo, pch=pchuse, xlab = "Principal component 1", ylab = "Principal component 2") )
+  ParentLines <- data.frame(x=rep(NA,3*nprog),y=rep(NA,3*nprog))
+  ParentLines[seq(1,(3*nprog-2),3),] <- GHW$PC$x[uo,1:2]
+  ParentLines[seq(2,(3*nprog-1),3),] <- GHW$PC$x[match(pedinfo$seqID[match(BothMatches$BestFatherMatch,pedinfo$IndivID)],seqID),1:2]
+  lines(ParentLines,col="blue")
+  ParentLines[seq(2,(3*nprog-1),3),] <- GHW$PC$x[match(pedinfo$seqID[match(BothMatches$BestMotherMatch,pedinfo$IndivID)],seqID),1:2]
+  lines(ParentLines,col="deeppink")
+  pch.used <- sort(match(unique(BothMatches$BothAssign),assign.rank))
+  if(!is.null(keypos)) legend(keypos,title="Assign",cex=0.75,pch=assign.pch[pch.used],legend=assign.rank[pch.used])
+  dev.off()
+ invisible(NULL)
+ }
+
 if (OK4ped & exists("pedfile") & exists("GCheck")) {
   pedinfo <- read.csv(pedfile, stringsAsFactors = FALSE, colClasses=c(FatherGroup="character", MotherGroup="character"))
   pedinfo <- pedinfo[!is.na(pedinfo$seqID), ]
@@ -403,6 +443,9 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
   if ("MotherID" %in% colnames(pedinfo)) 
     pedinfo <- parmatch("Mother", eval(parse(text = GCheck)))
   if ("FatherID" %in% colnames(pedinfo) & "MotherID" %in% colnames(pedinfo)) {
+    Par2mm <- mismatch.2par(pedinfo$IndivID,pedinfo$FatherID,pedinfo$MotherID)
+    pedinfo$FandMEMM <- with(Par2mm,mmrate-exp.mmrate)
+    pedinfo$FandMmatch <- with(pedinfo,FatherMatch & MotherMatch & FandMEMM < emm.thresh2)
     if (is.character(pedinfo$IndivID)) {
       umiss <- which(pedinfo$FatherID == "")
       if (length(umiss) > 0) 

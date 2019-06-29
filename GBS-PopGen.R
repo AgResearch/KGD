@@ -48,11 +48,16 @@ Fst.GBS0 <- function(snpsubset, indsubset, populations) {
 
  chisq.adj <- function(x,y) {
     # x has alleles in first 2* num ind rows and popn eff num in last npops rows, 1 col per SNP (but passed by column?)
+   chiresult <- NA
+   if(is.factor(y)) y <- factor(y)  # resets levels if some are unused
    npopstemp <-  length(unique(y))
    temptable <- table(x[1:(length(x)-npopstemp)],y)
-   temptable2 <- temptable * matrix(x[length(x)+((1-npopstemp):0)]/colSums(temptable),nrow=2,ncol=npopstemp,byrow=TRUE)
-   temptable2[is.na(temptable2)] <- 0  # note: if pop has 0 reads will result in NA X2 value
-   suppressWarnings(chisq.test(temptable2)$statistic)
+   if(nrow(temptable) == 2) {
+    temptable2 <- temptable * matrix(x[length(x)+((1-npopstemp):0)]/colSums(temptable),nrow=2,ncol=npopstemp,byrow=TRUE)
+    temptable2[is.na(temptable2)] <- 0  # note: if pop has 0 reads will result in NA X2 value
+    chiresult <- suppressWarnings(chisq.test(temptable2)$statistic)
+    }
+   chiresult
    }
 
 Fst.GBS <- function(snpsubset, indsubset, populations, varadj=0) {
@@ -71,6 +76,7 @@ Fst.GBS <- function(snpsubset, indsubset, populations, varadj=0) {
   X2results <- apply(rbind(aX2,snppopeffn),MARGIN=2,chisq.adj,y=rep(populations[indsubset],2))
   effnuma <- colSums(2*(1-depth2K(depth.orig[indsubset, snpsubset,drop=FALSE])))  # 2(1-K)
   Fst.results[usnp] <- npops * X2results / (effnuma * (npops - varadj))
+  cat("Fst Mean:",mean(Fst.results,na.rm=TRUE),"Median:",median(Fst.results,na.rm=TRUE),"\n")
   Fst.results
 }
 
@@ -100,12 +106,13 @@ Fst.GBS.pairwise <- function(snpsubset, indsubset, populations,sortlevels=TRUE, 
 
 
 
-popmaf <- function(snpsubset, indsubset, populations=NULL, subpopulations=NULL, indcol, colobj, minsamps=10, mafmin=0, sortlevels=TRUE) {
+popmaf <- function(snpsubset, indsubset, populations=NULL, subpopulations=NULL, indcol, colobj, minsamps=10, mafmin=0, sortlevels=TRUE, unif = FALSE) {
  #populations defined relative to full set (length nind)
  if (missing(snpsubset))   snpsubset <- 1:nsnps
  if (missing(indsubset))   indsubset <- 1:nind
  if (!missing(colobj)) {populations=colobj$collabels[match(colobj$sampcol,colobj$collist)]; indcol <- colobj$sampcol }
  if (missing(indcol)) indcol <- rep("black",nind)
+ if(is.null(populations)) populations <- rep("",nind)
  if(is.null(subpopulations)) subpopulations <- rep("",nind)
  popnames <- unique(populations[indsubset])
  sublevs <- unique(subpopulations[indsubset])
@@ -113,6 +120,23 @@ popmaf <- function(snpsubset, indsubset, populations=NULL, subpopulations=NULL, 
  nsub <- length(sublevs)
  if(nsub > 1) histdensity=30 else histdensity=NULL
  anglespan <- 180*(1-1/nsub)
+ maxfreq <- 0
+ if(unif) {
+  for (i in seq_along(popnames)) {
+   thigroup <- popnames[i]
+   for (j in 1:nsub){
+    thissub <- sublevs[j]
+    indgroup <- intersect(indsubset,which(populations==thigroup & subpopulations==thissub))
+    if(length(indgroup) >= minsamps) {
+     plev <- calcp(indsubset=indgroup,pmethod="G")
+     mafgroup <- pmin(plev,1-plev)
+     snpsgroup <- intersect(snpsubset,which(mafgroup >= mafmin))
+     histinfo <-  suppressWarnings(mafplot(mafgroup[snpsgroup], doplot=FALSE ) )
+     maxfreq <- max(maxfreq,histinfo$counts)
+     }
+    } 
+   }
+  }
  for (i in seq_along(popnames)) {
   thigroup <- popnames[i]
   for (j in 1:nsub){
@@ -123,8 +147,10 @@ popmaf <- function(snpsubset, indsubset, populations=NULL, subpopulations=NULL, 
     mafgroup <- pmin(plev,1-plev)
     snpsgroup <- intersect(snpsubset,which(mafgroup >= mafmin))
     groupcol <- unique(indcol[indgroup]); if (length(groupcol) > 1) groupcol <- "black"
-    mafplot(mafgroup[snpsgroup],plotname=paste0("MAF-",thigroup,thissub),barcol=groupcol,main=paste("MAF for",thigroup,thissub),
+    if (!unif) mafplot(mafgroup[snpsgroup],plotname=paste0("MAF-",thigroup,thissub),barcol=groupcol,main=paste("MAF for",thigroup,thissub),
             density=histdensity, angle=anglespan*((j-1)/(max(2,nsub)-1) - 0.5) )  # angle is irrelevant when nsub=1
+    if (unif) mafplot(mafgroup[snpsgroup],plotname=paste0("MAF-",thigroup,thissub),barcol=groupcol,main=paste("MAF for",thigroup,thissub),
+            density=histdensity, angle=anglespan*((j-1)/(max(2,nsub)-1) - 0.5), ylim=c(0,maxfreq) )  # angle is irrelevant when nsub=1
     nnz <- sum(mafgroup[snpsubset]>0,na.rm=TRUE)
     ng.2 <- sum(mafgroup[snpsubset]>0.2,na.rm=TRUE)
     cat(thigroup,thissub,"n=",length(indgroup),"# SNPs with MAF>0",nnz,"# SNPs with MAF>0.2",ng.2,"Proportion",ng.2/nnz,"\n")
@@ -134,9 +160,9 @@ popmaf <- function(snpsubset, indsubset, populations=NULL, subpopulations=NULL, 
  }
 
 
-manhatplot <- function(value, chrom, pos, plotname, qdistn=qunif, ...) {
+manhatplot <- function(value, chrom, pos, plotname, qdistn=qunif, keyrot=0, ...) {
  chromcol <- colourby(chrom)
- colkey(chromcol,"chrom")
+ colkey(chromcol,"chrom",srt=keyrot)
  plotord <- order(chrom,pos)
  png(paste0(plotname,"-Manhat.png"),width=1200)
   plot(value[plotord], col=chromcol$sampcol[plotord],xlab="Position",ylab=substitute(value),cex=0.8, xaxt="n")
