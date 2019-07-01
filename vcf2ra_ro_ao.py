@@ -15,6 +15,10 @@
 
 import sys, os
 
+#check python version
+PY2 = sys.version_info[0] == 2
+PY3 = sys.version_info[0] == 3
+
 ##Should this be greater than?
 if len(sys.argv) < 2:
 	sys.exit('Usage: python %s vcf_file\n' % sys.argv[0])
@@ -46,11 +50,18 @@ while line:
 	elif line.startswith("#CHROM"):
 		line = line.split('\t')
 		headerlist += line[9:]
-		print >> ofh, '\t'.join(headerlist)
-		print "found", len(headerlist), "samples"
+		if PY2:
+			print >> ofh, '\t'.join(headerlist)
+			print "found", len(headerlist), "samples"
+		if PY3:
+			print('\t'.join(headerlist), file=ofh)
+			print("found", len(headerlist), "samples")
 		for i in headerlist:
 			if " " in i:
-				print "WARN: spaces in sample names are discouraged", i
+				if PY2:
+					print "WARN: spaces in sample names are discouraged", i
+				if PY3:
+					print("WARN: spaces in sample names are discouraged", i)
 			else:
 				pass
 	else:
@@ -75,7 +86,10 @@ while line:
 			elif "DP4" in format:
 				dp4_pos = format.index('DP4')
 			else:
-				print "\nERROR: We can't use this vcf file. AD (Allelic Depth) or RO (Reference allele observation count) and AO (Alternate allele observation count) information is needed.\n"
+				if PY2:
+					print "\nERROR: We can't use this vcf file. AD (Allelic Depth) or RO (Reference allele observation count) and AO (Alternate allele observation count) information is needed.\n"
+				if PY3:
+					print("\nERROR: We can't use this vcf file. AD (Allelic Depth) or RO (Reference allele observation count) and AO (Alternate allele observation count) information is needed.\n")
 				sys.exit()
 			for i in line[9:]:
 				if i in empty_genotypes:	#translate uncovered to 0,0. Added translations for '.,.' and '.' to allow for
@@ -99,13 +113,23 @@ while line:
 						outlist.append(ad)
 					else:
 						##Should never really get here, but if AD, AO and RO are all null, it will break the script
-						print "\nERROR: Can't find either an Allele Depth (AD) or  RO (Reference allele observation count) and AO (Alternate allele observation count) at this position.\n"
+						if PY2:
+							print "\nERROR: Can't find either an Allele Depth (AD) or  RO (Reference allele observation count) and AO (Alternate allele observation count) at this position.\n"
+						if PY3:
+							print("\nERROR: Can't find either an Allele Depth (AD) or  RO (Reference allele observation count) and AO (Alternate allele observation count) at this position.\n")
 						sys.exit()
-			print >> ofh, '\t'.join(outlist)
+			if PY2:
+
+				print >> ofh, '\t'.join(outlist)
+			if PY3:
+				print('\t'.join(outlist), file=ofh)
 			snp_counter += 1
 	line = infh.readline()
 
 infh.close()
 ofh.close()
 
-print snp_counter, "SNPs written."
+if PY2:
+	print snp_counter, "SNPs written."
+if PY3:
+	print(snp_counter, "SNPs written.")
