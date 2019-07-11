@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.8.3"
+KGDver <- "0.8.4"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -303,6 +303,16 @@ HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig",
   dev.off()
  }
 
+finclass <- function(HWdiseq=HWdis, MAF=maf, colobj, classname=NULL, plotname="finclass", finxlim=c(0,0.5), finylim=c(-0.25, 0.25)) {
+ if(missing(colobj)) colobj <-  list(collabels="",collist="black",sampcol=rep("black",length(MAF)))
+ plotord <- 1:length(MAF)  # fixed for now, keep in case want to allow reordering
+ png(paste0(plotname,".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+  plot(HWdiseq[plotord] ~ MAF[plotord], col = colobj$sampcol[plotord], cex = 0.8, xlab = "Minor Allele Frequency", 
+       ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5, xlim=finxlim, ylim=finylim)
+  legend(0.05, -0.075, legend=colobj$collabels,col=colobj$collist,pch=1,title=classname)
+  dev.off()
+ }
+
 mafplot <- function(MAF=maf,plotname="MAF", barcol="grey", doplot=TRUE, ...) {
  if(doplot) png(paste0(plotname,".png"), pointsize = cex.pointsize * 12)
   histinfo <- hist(MAF, breaks = 50, xlab = "Minor Allele Frequency", col = barcol, plot= doplot, ...)
@@ -518,10 +528,8 @@ if(!functions.only) {
 
 ################## functions
 upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
-
-################## undoc AgR functions
 #seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1] # might not get number of cols right
-seq2samp <- function(seqIDvec=seqID) sapply(strsplit(seqIDvec,split="_"),"[",1)
+seq2samp <- function(seqIDvec=seqID, splitby="_") sapply(strsplit(seqIDvec,split=splitby),"[",1)
 
 colourby <- function(colgroup, groupsort=FALSE,maxlight=1) {
  #maxlight is maximum lightness between 0 and 1
@@ -538,9 +546,10 @@ colourby <- function(colgroup, groupsort=FALSE,maxlight=1) {
  }
 
 changecol <- function(colobject,colposition,newcolour) {# provide new colours to colourby object
- oldcolour <- colobject$collist[colposition]
+ if(length(colposition) != length(newcolour))  stop("Error: colposition and newcolour are different lengths") 
+ oldcolour <- colobject$collist
  colobject$collist[colposition] <- newcolour
- colobject$sampcol[which(colobject$sampcol == oldcolour)] <- newcolour
+ colobject$sampcol <-  colobject$collist[match(colobject$sampcol,oldcolour)] 
  colobject
  }
 
@@ -551,7 +560,8 @@ colkey <- function(colobj,sfx="",srt.lab=0) {  # plot a key for colours
  text(labels=colobj$collabels,x=1:nlevels,y=0.8,srt=srt.lab)
  dev.off()
  }
-######################
+
+
 ### calculate expected identity mismatch rate given observed geno & depths of indiv1 and depths of indiv2
 mismatch.ident <- function(seqid1, seqid2,snpsubset=1:nsnps, puse=p, mindepth.mm=1) {
   if(mindepth.mm < 1) mindepth.mm <- 1

@@ -193,3 +193,79 @@ manhatplot <- function(value, chrom, pos, plotname, qdistn=qunif, keyrot=0, ...)
 #For the uniform distribution see dunif.
 #For the Weibull distribution see dweibull.
 
+
+# select & pair (from different chromosomes) snps
+# based on T Bilton code
+snpselection <- function(chromosome,position,nsnpperchrom=100,seltype="centre",randseed=NULL, snpsubset,chromuse) {
+ #seltype is centre, even or random
+ if (missing(snpsubset))   snpsubset <- 1:nsnps
+ if (missing(chromuse)) chromuse <- unique(chromosome)
+ if(seltype=="center") seltype <- "centre"
+ usnp <- intersect(snpsubset, which(chromosome %in% chromuse))
+ chromlist <- unique(chromosome[usnp])
+ chromnone <- setdiff(chromuse,chromlist)
+ if(length(chromnone) > 0 ) cat("Warning: no SNPs requested on chromosome(s)", chromnone, "\n")
+ if(seltype=="random") {
+  set.seed(randseed)
+  snpchoose <- function(x) {
+   indx <- which(chromosome[usnp] == x)
+   nsnp <- min(c(length(indx),nsnpperchrom)) ## if there are fewer than nsnpperchrom SNPs on the chromosome
+   return(sample(indx,nsnp))
+   }
+  }
+ if(seltype=="even") {
+  snpchoose <- function(x) {
+   indx <- which(chromosome[usnp] == x)
+   nsnp <- min(c(length(indx),nsnpperchrom)) ## if there are fewer than nsnpperchrom SNPs on the chromosome
+   snpsep <- length(indx)/nsnpperchrom
+   temp <- sort(position[usnp][indx], index.return=TRUE)
+   return(indx[temp$ix[round(seq(snpsep/2,by=snpsep,length.out=nsnpperchrom))]])
+   }
+  }
+ if(seltype=="centre") {
+  meanpos <- aggregate(position[usnp] ~ chromosome[usnp],FUN=mean)
+  colnames(meanpos) <- c("chr","pos")
+  chromlist <- unique(chromosome[usnp])
+  snpchoose <- function(x) {
+   indx <- which(chromosome[usnp] == x)
+   nsnp <- min(c(length(indx),nsnpperchrom)) ## if there are fewer than nsnpperchrom SNPs on the chromosome
+   temp <- sort(abs(position[usnp][indx] - meanpos$pos[which(meanpos$chr==x)]), index.return=TRUE)
+   return(indx[sort(temp$ix[1:nsnp])])
+   }
+  }
+ snplist <- sapply(chromlist, snpchoose, simplify = FALSE)
+ nchrom <- length(snplist)
+ pairs <- do.call("rbind", sapply(1:(nchrom-1), function(x) as.matrix(expand.grid(snplist[[x]], unlist(snplist[(x+1):nchrom]), KEEP.OUT.ATTRS = FALSE)) ))
+ pairs[,1] <- usnp[pairs[,1]]
+ pairs[,2] <- usnp[pairs[,2]]
+ return(pairs)
+ }
+
+### T Bilton, select SNPs (for LD analysis) from a UR object (modified)
+snpselectionUR <- function(URobj, nsnpperchrom=100, nchrom, ...){
+  chromlist <- unique(URobj$.__enclos_env__$private$chrom)
+  if (!missing(nchrom)) chromlist <- chromlist[1:nchrom]
+  URpairs <- snpselection (chromosome=URobj$.__enclos_env__$private$chrom,position=URobj$.__enclos_env__$private$pos,nsnpperchrom=nsnpperchrom,chromuse=chromlist, ...)
+  return(URpairs)
+}
+
+Nefromr2 <- function(r2auto,nLD, alpha=1, weighted=FALSE,minN=1) {
+ #r2auto = set of r2 values across different autosomes
+ #nLD = # individuals for r2 calcs
+ #alpha = mutation parameter
+ #beta=1 (2) for phase unknown (known)
+ if(length(nLD) ==1) nLD <- rep(nLD,length(r2auto))
+ uN <- which(nLD >= minN)
+ r2auto <- r2auto[uN]
+ nLD <- nLD[uN]
+ wt <- rep(1,length(r2auto))
+ if(weighted) wt <- nLD
+ meanN <- mean(nLD)
+ Neauto <- (1/weighted.mean(r2auto,wt,na.rm=TRUE) - 1) /2   
+ beta <- 1; Neauto.adj.b1 <- (1/(weighted.mean(r2auto,wt,na.rm=TRUE) -1/(beta*meanN)) - alpha) /2 
+ beta <- 2; Neauto.adj.b2 <- (1/(weighted.mean(r2auto,wt,na.rm=TRUE) -1/(beta*meanN)) - alpha) /2 
+ Neauto.med <- (1/median(r2auto,na.rm=TRUE) - 1) /2
+ beta <- 1; Neauto.med.adj.b1 <- (1/(median(r2auto,na.rm=TRUE) -1/(beta*meanN)) - alpha) /2 
+ beta <- 2; Neauto.med.adj.b2 <- (1/(median(r2auto,na.rm=TRUE) -1/(beta*meanN)) - alpha) /2 
+ data.frame(n=meanN,Neauto,Neauto.adj.b1,Neauto.adj.b2,Neauto.med,Neauto.med.adj.b1,Neauto.med.adj.b2)
+ }
