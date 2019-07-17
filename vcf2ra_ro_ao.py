@@ -46,7 +46,7 @@ while line:
 	elif line.startswith("#CHROM"):
 		line = line.split('\t')
 		headerlist += line[9:]
-		ofh.write('\t'.join(headerlist))
+		ofh.write('%s\n' %('\t'.join(headerlist)))
 		print("found %s samples" %len(headerlist))
 		for i in headerlist:
 			if " " in i:
@@ -101,7 +101,7 @@ while line:
 						##Should never really get here, but if AD, AO and RO are all null, it will break the script
 						print("\nERROR: Can't find either an Allele Depth (AD) or  RO (Reference allele observation count) and AO (Alternate allele observation count) at this position.\n")
 						sys.exit()
-			ofh.write('\t'.join(outlist))
+			ofh.write('%s\n' %('\t'.join(outlist)))
 			snp_counter += 1
 	line = infh.readline()
 
