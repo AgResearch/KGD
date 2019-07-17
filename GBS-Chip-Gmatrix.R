@@ -1,14 +1,128 @@
 #!/bin/echo Source me don't execute me 
 
+KGDver <- "0.8.4"
+cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
 if (!exists("sampdepth.thresh")) sampdepth.thresh <- 0.01
 if (!exists("snpdepth.thresh"))  snpdepth.thresh  <- 0.01
 if (!exists("hirel.thresh"))     hirel.thresh     <- 0.9
+if (!exists("iemm.thresh"))      iemm.thresh      <- 0.05
 if (!exists("triallelic.thresh")) triallelic.thresh <- 0.005  # if third allele present in higher than this proportion, then discard SNP, otherwise discard 3rd & 4th allele calls (currently only for ANGSD data)
 if (!exists("cex.pointsize"))    cex.pointsize    <- 1
 if (!exists("functions.only"))   functions.only   <- FALSE
+if (!exists("alleles.keep"))     alleles.keep     <- FALSE
 if (!exists("outlevel"))         outlevel         <- 9
+if (!exists("use.Rcpp"))         use.Rcpp         <- TRUE
+if (!exists("nThreads"))         nThreads         <- 4  # 0 means use all available
+
+# function to locate Rcpp file (assume it is in the same directory as this file and this file was 'sourced')
+pathToCppFile = function() {
+    cpp.name <- "GBS-Rcpp-functions.cpp"
+    this.file <- NULL
+    for (i in -(1:sys.nframe())) {
+        if (identical(sys.function(i), base::source)) {
+            f <- sys.frame(i)
+            if (!f$chdir)
+                this.file <- normalizePath(f$ofile)
+            break
+        }
+    }
+    if (!is.null(this.file)) {
+        source.dir <- dirname(this.file)
+        return(file.path(source.dir, cpp.name))
+    }
+    else {
+        # assume it is in the current working directory
+        return(cpp.name)
+    }
+}
+
+# load C++ functions
+# compiling can take ~10 seconds, so we cache the file (under ~/R/RcppCache)
+# it will only be recompiled when the C++ file changes or is moved
+have_rcpp <- FALSE
+if (require(Rcpp) & use.Rcpp) {
+    # RcppArmadillo is also required, but we don't need to load it here
+    if (is.element("RcppArmadillo", installed.packages()[,"Package"])) {
+        have_rcpp <- TRUE
+        cpp.path <- pathToCppFile()
+        cat("Loading C++ functions:", cpp.path, "\n")
+        sourceCpp(file = cpp.path, showOutput = TRUE,
+                  cacheDir = file.path(path.expand("~"), "R", "RcppCache"))
+    }
+}
+
+### depth2K functions
+ r_depth2K <- function(depthvals)  1/2^depthvals   # convert depth to K value assuming binomial 
+ # select R or Rcpp version of depth2K depending on whether Rcpp is installed
+ if (have_rcpp) {
+     depth2K <- function(depthvals) {
+         # Rcpp version only works with matrix as input, so fallback to R version otherwise
+         if (is.matrix(depthvals)) {
+             result <- rcpp_depth2K(depthvals, nThreads)
+         } else {
+             result <- r_depth2K(depthvals)
+         }
+         return(result)
+     }
+ } else {
+     depth2K <- r_depth2K
+ }
+
+# convert depth to K value assuming beta-binomial with parameters alpha=beta=alph. Inf gives binomial
+ r_depth2Kbb <- function(depthvals, alph=Inf) {
+  if (alph==Inf) 1/2^depthvals else beta(alph,depthvals+alph)/beta(alph,alph)
+  }
+ # select R or Rcpp version depending on whether Rcpp is installed
+ if (have_rcpp) {
+    depth2Kbb <- function(depthvals, alph=Inf) {
+        # Rcpp version only works with matrix as input, so fallback to R version otherwise
+        if (is.matrix(depthvals) & alph < Inf) {
+           if(alph < Inf) {
+            result <- rcpp_depth2Kbb(depthvals, nThreads, alph)
+            } else {
+              result <- depth2K(depthvals)
+            }
+          } else {    
+            result <- r_depth2Kbb(depthvals, alph)
+        }
+        return(result)
+    }
+ } else {
+     depth2Kbb <- r_depth2Kbb
+ }
+
+# convert depth to K value modp model. prob of seeing same allele as last time is modp (usually >= 0.5)
+ r_depth2Kmodp <- function(depthvals, modp=0.5 ) {
+  Kvals <- 0.5*modp^(depthvals-1)
+  Kvals[depthvals==0] <- 1
+  Kvals
+  }
+ # select R or Rcpp version depending on whether Rcpp is installed
+ if (have_rcpp) {
+    depth2Kmodp <- function(depthvals, modp=0.5) {
+        # Rcpp version only works with matrix as input, so fallback to R version otherwise
+        if (is.matrix(depthvals)) {
+            result <- rcpp_depth2Kmodp(depthvals, modp, nThreads)
+        } else {
+            result <- r_depth2Kmodp(depthvals, modp)
+        }
+        return(result)
+    }
+ } else {
+     depth2Kmodp <- r_depth2Kmodp
+ }
+
+depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine depth2K
+ if (!dmodel=="modp") dmodel <- "bb"
+ if (missing(param) & dmodel=="bb") param <- Inf
+ if (missing(param) & dmodel=="modp") param <- 0.5
+ if (dmodel=="bb") depth2K <- function(depthvals) depth2Kbb(depthvals,alph=param)
+ if (dmodel=="modp") depth2K <- function(depthvals) depth2Kmodp(depthvals,modp=param)
+ depth2K
+ }
+
 
 readGBS <- function(genofilefn = genofile) {
  if (gform == "chip") readChip(genofilefn)
@@ -17,15 +131,21 @@ readGBS <- function(genofilefn = genofile) {
  if (gform %in% c("uneak","Tassel")) readTassel(genofilefn)
  }
 
-readTD <- function(genofilefn0 = genofile) {
+readTD <- function(genofilefn0 = genofile, skipcols=0) {
   havedt <- require("data.table")
   ghead <- scan(genofilefn0, what = "", nlines = 1, sep = ",")
+  if(skipcols > 0) ghead <- ghead[-(1:skipcols)]
   nsnps <<- (length(ghead) - 1)/2
   SNP_Names <<- read.table(text=ghead[-1][2*seq(nsnps)],sep="_",fill=TRUE,stringsAsFactors=FALSE)[,1]
   if (havedt) {
    isgzfile <- grepl(".gz",genofilefn0) #gz unzipping will only work on linux systemss
-   if(isgzfile) genosin <- fread(paste("gunzip -c",genofilefn0),sep=",",header=TRUE,showProgress=FALSE)
+   if ( packageVersion("data.table") < "1.12") {
+    if(isgzfile) genosin <- fread(paste("gunzip -c",genofilefn0),sep=",",header=TRUE,showProgress=FALSE)
+    } else {    
+    if(isgzfile) genosin <- fread(cmd=paste("gunzip -c",genofilefn0),sep=",",header=TRUE,showProgress=FALSE)
+    }
    if(!isgzfile) genosin <- fread(genofilefn0,sep=",",header=TRUE)
+   if(skipcols > 0) genosin <- genosin[,-(1:skipcols)]
    seqID <<- as.matrix(genosin[,1])[,1]  # (Allows any name for first col), also convert to vector from data.table
    nind <<- length(seqID)
    alleles <<- as.matrix(genosin[,-1,with=FALSE])
@@ -114,6 +234,7 @@ samp.remove <- function (samppos=NULL, keep=FALSE) {
  if(keep) samppos <- setdiff(1:nind,samppos)
  if(length(samppos)>0) {
     if(gform != "chip") alleles <<- alleles[-samppos, ]
+    if(gform == "chip" & exists("alleles") & alleles.keep) alleles <- alleles[-samppos,]
     if(exists("depth")) depth <<- depth[-samppos, ]
     if(exists("depth.orig")) depth.orig <<- depth.orig[-samppos, ]
     if(exists("genon")) genon <<- genon[-samppos,]
@@ -126,16 +247,14 @@ samp.remove <- function (samppos=NULL, keep=FALSE) {
 snp.remove <- function(snppos=NULL, keep=FALSE) {
  if(keep) snppos <- setdiff(1:nsnps,snppos)
  if (length(snppos) > 0) {
-   p <<- p[-snppos]
-   nsnps <<- length(p)
    SNP_Names <<- SNP_Names[-snppos]
+   nsnps <<- length(SNP_Names)
+   if(exists("p")) p <<- p[-snppos]
    if(exists("depth")) depth <<- depth[, -snppos]
    if(exists("genon")) genon <<- genon[, -snppos]
    if(exists("chrom")) chrom <<- chrom[-snppos]
    if(exists("pos")) pos <<- pos[-snppos]
-   if (gform == "chip") {
-    genon <<- genon[, -snppos]
-   } else {
+   if (!gform == "chip") {
      uremovea <- sort(c(2 * snppos, 2 * snppos - 1))  # allele positions
      if(exists("RAcounts")) RAcounts <<- RAcounts[-snppos, ]
      alleles <<- alleles[, -uremovea]
@@ -163,26 +282,43 @@ finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=pale
   dev.off()
  }
 
-HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig", finpalette=palette.aquatic, finxlim=c(0,0.5), finylim=c(-0.25, 0.25)) {
- sigtrans <- function(x) round(sqrt(x) * 40/max(sqrt(x))) + 1  # to compress colour scale at higher LRT
- sigpoints <- c(0.5, 5, 50, 100)  # legend points
+HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig", finpalette=palette.aquatic, finxlim=c(0,0.5), finylim=c(-0.25, 0.25), 
+                      llname="-log10 LRT", sortord=ll) {
+ sigtrans <- function(x) round(sqrt(x) * 40/max(sqrt(ll),na.rm=TRUE)) + 1  # to compress colour scale at higher LRT
+ sigpoints <- c(0.5, 2, 5, 20, 50, 200, 500)  # legend points
+ sigpoints <- sigpoints[union(1:2,which(sigpoints < max(ll,na.rm=TRUE)))]
+ if(length(sigpoints) > 5) sigpoints <- sigpoints[seq(1,length(sigpoints),2)]
  transpoints <- sigtrans(sigpoints)
- maxtrans <- sigtrans(max(ll))
+ maxtrans <- sigtrans(max(ll,na.rm=TRUE))
  legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol = 1))
+ plotord <- 1:length(MAF)
+ if(!is.null(sortord)) plotord <- order(sortord)
  png(paste0(plotname,".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
   if(whitedist(finpalette) < 25) par(bg="grey")
-  plot(HWdiseq ~ MAF, col = finpalette[sigtrans(ll)], cex = 0.8, xlab = "Minor Allele Frequency", 
+  plot(HWdiseq[plotord] ~ MAF[plotord], col = finpalette[sigtrans(ll)][plotord], cex = 0.8, xlab = "Minor Allele Frequency", 
        ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5, xlim=finxlim, ylim=finylim)
   rasterImage(legend_image, 0.05, -0.2, 0.07, -0.1)
   text(x = 0.1, y = -0.2 + 0.1 * transpoints/maxtrans, labels = format(sigpoints))
-  text(x = 0.075, y = -0.075, labels = "log10 LRT", cex = 1.2)
+  text(x = 0.075, y = -0.075, labels = llname, cex = 1.2)
   dev.off()
  }
 
-mafplot <- function(MAF=maf,plotname="MAF", barcol="grey", ...) {
- png(paste0(plotname,".png"), pointsize = cex.pointsize * 12)
-  hist(MAF, breaks = 50, xlab = "Minor Allele Frequency", col = barcol, ...)
+finclass <- function(HWdiseq=HWdis, MAF=maf, colobj, classname=NULL, plotname="finclass", finxlim=c(0,0.5), finylim=c(-0.25, 0.25)) {
+ if(missing(colobj)) colobj <-  list(collabels="",collist="black",sampcol=rep("black",length(MAF)))
+ plotord <- 1:length(MAF)  # fixed for now, keep in case want to allow reordering
+ png(paste0(plotname,".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+  plot(HWdiseq[plotord] ~ MAF[plotord], col = colobj$sampcol[plotord], cex = 0.8, xlab = "Minor Allele Frequency", 
+       ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5, xlim=finxlim, ylim=finylim)
+  legend(0.05, -0.075, legend=colobj$collabels,col=colobj$collist,pch=1,title=classname)
   dev.off()
+ }
+
+mafplot <- function(MAF=maf,plotname="MAF", barcol="grey", doplot=TRUE, ...) {
+ if(doplot) png(paste0(plotname,".png"), pointsize = cex.pointsize * 12)
+  histinfo <- hist(MAF, breaks = 50, xlab = "Minor Allele Frequency", col = barcol, plot= doplot, ...)
+  if(doplot) dev.off()
+  if(doplot) histinfo <- paste(plotname," png output created")
+  histinfo
  }
 
 na.zero <- function (x) {
@@ -190,11 +326,32 @@ na.zero <- function (x) {
     return(x)
 }
 
+calcp <- function(indsubset, pmethod="A") {
+ if(!pmethod == "G") pmethod <- "A"
+ if (missing(indsubset))   indsubset <- 1:nind
+ if (pmethod == "A") {
+  if (nrow(alleles) == nind) {
+   RAcountstemp <- matrix(colSums(alleles[indsubset,,drop=FALSE]), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
+   afreqs <- RAcountstemp[, 1]/rowSums(RAcountstemp)  # p for ref allele - based on # reads, not on inferred # alleles
+   } else {
+   afreqs <- NULL
+   print("Error: alleles is wrong size for pmethod A")
+   }
+  }
+ if (pmethod == "G") afreqs <- colMeans(genon[indsubset,,drop=FALSE], na.rm = TRUE)/2  # allele freq assuming genotype calls
+ afreqs
+ }
+
 GBSsummary <- function() {
  havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
-  sampdepth.max <<- apply(depth, 1, max)
+  if (have_rcpp) {
+   sampdepth.max <- rcpp_rowMaximums(depth, nThreads)
+  }
+  else {
+   sampdepth.max <- apply(depth, 1, max)
+  }
   sampdepth <<- rowMeans(depth)
   u0 <- which(sampdepth.max == 0)
   u1 <- setdiff(which(sampdepth.max == 1 | sampdepth < sampdepth.thresh), u0)
@@ -209,12 +366,18 @@ GBSsummary <- function() {
    print(data.frame(indnum = u1, seqID = seqID[u1], sampdepth = sampdepth[u1]))
    }
   samp.remove(union(u0, u1))
-  if (!havedepth) { # not redone e.g. after merge
-   allelecounts <<- colSums(alleles)
-   RAcounts <<- matrix(allelecounts, ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
-   p <<- RAcounts[, 1]/rowSums(RAcounts)  # p for ref allele - based on # reads, not on inferred # alleles
-   acountmin <- 1
-   acountmax <- max(rowSums(RAcounts))
+  if (!exists("p") & exists("alleles")) { # not redone e.g. after merge
+   p <<- calcp()
+   if (is.null(p)) {
+    cat("alleles not available, using genotype method for p\n")
+    p <- calcp(pmethod="G")
+    }
+# changed to use function version, delete following lines
+#   allelecounts <<- colSums(alleles)
+#   RAcounts <<- matrix(allelecounts, ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
+#   p <<- RAcounts[, 1]/rowSums(RAcounts)  # p for ref allele - based on # reads, not on inferred # alleles
+#   acountmin <- 1
+#   acountmax <- max(rowSums(RAcounts))
    }
   if(exists("genosin")) rm(genosin)
   } #end GBS-specific
@@ -271,12 +434,27 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  maf <<- ifelse(p1 > 0.5, p2, p1)
  l10p <- -log10(exp(1)) * pchisq(x2, 1, lower.tail = FALSE, log.p = TRUE)
  l10LRT <<- -log10(exp(1)) * pchisq(LRT, 1, lower.tail = FALSE, log.p = TRUE)
+ Kdepth <- depth2K(depth)
+ Kdepth[depth==0] <- NA
+ esnphetstar <- 2*p1*p2*(1-2*colMeans(Kdepth,na.rm=TRUE))
+ osnphetstar <- nab/(naa + nab + nbb)
+# x2star <<- colSums(1-Kdepth,na.rm=TRUE)*(1-osnphetstar/esnphetstar)^2 
+ x2star <<- colSums(1-2*Kdepth,na.rm=TRUE)*(1-osnphetstar/esnphetstar)^2 # corrected Nov 2018
+ l10pstar <<- -log10(exp(1)) * pchisq(x2star, 1, lower.tail = FALSE, log.p = TRUE)
 
  sampdepth <<- rowMeans(depth)  # recalc after removing SNPs and samples
- if(outlevel > 4) sampdepth.med <<- apply(depth, 1, median)
+ #if(outlevel > 4) sampdepth.med <<- apply(depth, 1, median)
+ if(outlevel > 4) {
+   if (have_rcpp) {
+     sampdepth.med <<- rcpp_rowMedians(depth, nThreads)
+   }
+   else {
+     sampdepth.med <<- apply(depth, 1, median)
+   }
+ }
  depth0 <- rowSums(depth == 0)
  snpdepth <<- colMeans(depth)
- missrate <- sum(depth == 0)/nrow(depth)/ncol(depth)
+ missrate <- sum(as.numeric(depth == 0))/nrow(depth)/ncol(depth)
  cat("Proportion of missing genotypes: ", missrate, "Callrate:", 1-missrate,"\n")
 
  callrate <- 1 - rowSums(depth == 0)/nsnps  # sample callrate, after removing SNPs, samples 
@@ -316,15 +494,20 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
    dev.off()
   }
  finplot()
+ HWsigplot(ll=l10pstar,llname="-log10p X2*", finpalette=colorRampPalette(c("deepskyblue2","red"))(50))
+ png("X2star-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
+  qqplot(qchisq(ppoints(nsnps), df = 1), x2star, main = parse(text = "Hardy-Weinberg ~~ X^2~~ '* Q-Q Plot'"), 
+         xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), ylab = "Sample Quantiles")
+  dev.off()
+ if(outlevel > 9) HWsigplot(plotname="HWdisMAFsig-raw")
  if(outlevel > 4) {
-  HWsigplot()
   png("LRT-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-  qqplot(qchisq(ppoints(nsnps), df = 1), LRT, main = "Hardy-Weinberg LRT Q-Q Plot", xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), 
+   qqplot(qchisq(ppoints(nsnps), df = 1), LRT, main = "Hardy-Weinberg LRT Q-Q Plot", xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), 
          ylab = "Sample Quantiles")
-  dev.off()
+   dev.off()
   png("LRT-hist.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-  hist(LRT, breaks = 50, col = "grey", xlab = "Hardy Weinberg likelihood ratio test statistic")
-  dev.off()
+   hist(LRT, breaks = 50, col = "grey", xlab = "Hardy Weinberg likelihood ratio test statistic")
+   dev.off()
   }
  mafplot()
  depth.orig <<- depth  # see next, but actually need original depths for plots, summaries etc
@@ -344,47 +527,71 @@ if(!functions.only) {
 
 
 ################## functions
- depth2K <- function(depthvals)  1/2^depthvals   # convert depth to K value assuming binomial 
-
- depth2Kbb <- function(depthvals, alph=Inf) {
-  # convert depth to K value assuming beta-binomial with parameters alpha=beta=alph. Inf gives binomial
-  if (alph==Inf) 1/2^depthvals else beta(alph,depthvals+alph)/beta(alph,alph)
-  }
-
-# convert depth to K value modp model. prob of seeing same allele as last time is modp (usually >= 0.5)
- depth2Kmodp <- function(depthvals, modp=0.5 ) {
-  Kvals <- 0.5*modp^(depthvals-1)
-  Kvals[which(depthvals==0)] <- 1
-  Kvals
-  }
-
-depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine depth2K
- if (!dmodel=="modp") dmodel <- "bb"
- if (missing(param) & dmodel=="bb") param <- Inf
- if (missing(param) & dmodel=="modp") param <- 0.5
- if (dmodel=="bb") depth2K <- function(depthvals) depth2Kbb(depthvals,alph=param)
- if (dmodel=="modp") depth2K <- function(depthvals) depth2Kmodp(depthvals,modp=param)
- depth2K
- }
-
-
 upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
-#seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1]  # undoc AgR function # might not get number of cols right
-seq2samp <- function(seqIDvec=seqID) sapply(strsplit(seqIDvec,split="_"),"[",1)
-colourby <- function(colgroup, groupsort=FALSE) {# undoc AgR function
+#seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1] # might not get number of cols right
+seq2samp <- function(seqIDvec=seqID, splitby="_") sapply(strsplit(seqIDvec,split=splitby),"[",1)
+
+colourby <- function(colgroup, groupsort=FALSE,maxlight=1) {
+ #maxlight is maximum lightness between 0 and 1
  collabels <- unique(colgroup)
  if(groupsort) collabels <- sort(collabels)
  ncol <- length(collabels)
  collist <- rainbow(ncol)
+ lightness <- colSums( col2rgb(collist))/(3*255)
+ collist <- rgb(t(col2rgb(collist) %*% diag(pmin(lightness,rep(maxlight,length(lightness))) / lightness)), maxColorValue = 255)
 # if(ncol > 8 ) collist[seq(2,ncol,2)] <-  rgb(t(col2rgb(collist[seq(2,ncol,2)]))/1.5,maxColorValue = 255)  # darken every 2nd one
  if(ncol > 8 ) collist[seq(2,ncol,2)] <-  rgb((t(col2rgb(collist[seq(2,ncol,2)]))+matrix(127,ncol=3,nrow=floor(ncol/2)))/2,maxColorValue = 255)  # darken every 2nd one
  sampcol <- collist[match(colgroup,collabels)]
  list(collabels=collabels,collist=collist,sampcol=sampcol)
  }
 
+changecol <- function(colobject,colposition,newcolour) {# provide new colours to colourby object
+ if(length(colposition) != length(newcolour))  stop("Error: colposition and newcolour are different lengths") 
+ oldcolour <- colobject$collist
+ colobject$collist[colposition] <- newcolour
+ colobject$sampcol <-  colobject$collist[match(colobject$sampcol,oldcolour)] 
+ colobject
+ }
+
+colkey <- function(colobj,sfx="",srt.lab=0) {  # plot a key for colours
+ png(paste0("ColourKey",sfx,".png"),height=240)
+ nlevels <- length(colobj$collabels)
+ plot( 1:nlevels, rep(1,nlevels),col=colobj$collist,pch=16, cex=1.5,ylab="", axes=FALSE,xlab="")
+ text(labels=colobj$collabels,x=1:nlevels,y=0.8,srt=srt.lab)
+ dev.off()
+ }
 
 
-posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset) {
+### calculate expected identity mismatch rate given observed geno & depths of indiv1 and depths of indiv2
+mismatch.ident <- function(seqid1, seqid2,snpsubset=1:nsnps, puse=p, mindepth.mm=1) {
+  if(mindepth.mm < 1) mindepth.mm <- 1
+  pos1 <- match(seqid1, seqID)
+  pos2 <- match(seqid2, seqID)
+  depthi <- depth.orig[pos1, ]
+  depthj <- depth.orig[pos2, ]
+  usnp <- intersect(snpsubset,which(depthi >= mindepth.mm & depthj >= mindepth.mm))
+  pi <- genon[pos1, usnp]/2
+  pj <- genon[pos2, usnp]/2
+  K1  <-  depth2K(depthi[usnp])
+  K2  <-  depth2K(depthj[usnp])
+  nmismatch <- length(which(pi != pj))
+  ncompare <- length(usnp)
+  ptemp <- puse[usnp]
+  P <- ptemp*(1-ptemp)
+  expmm <- rep(NA,length(usnp))
+  ug <- which(pi==1)
+  if(length(ug)>0) expmm[ug] <- 2 * P[ug] * K1[ug] * (1 - K2[ug]) / (ptemp[ug]^2+2*P[ug]*K1[ug])
+  ug <- which(pi==0.5)
+  if(length(ug)>0) expmm[ug] <- 2 * K2[ug] 
+  ug <- which(pi==0)
+  if(length(ug)>0) expmm[ug] <- 2 * P[ug] * (1 - K1[ug]) * K2[ug] / ((1-ptemp[ug])^2+2*P[ug]*K1[ug])
+  exp.mmrate <- mean(expmm,na.rm=TRUE)
+  mmrate <- nmismatch/ncompare
+  list(mmrate=mmrate,ncompare=ncompare,exp.mmrate=exp.mmrate)
+}
+
+
+posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:nsnps,puse=p) {
  if (missing(Gindsubset)) Gindsubset <- 1:nind
  if (missing(indsubset)) indsubset <- 1:nrow(Guse)
  mergeIDs <- mergeIDs[indsubset]
@@ -393,19 +600,29 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset) {
  seqIDtemp <- seqID[Gindsubset][indsubset]
  multiIDs <- unique(mergeIDs[which(duplicated(mergeIDs))])
  depthsub <- depth.orig[Gindsubset,,drop=FALSE]
- posCstats <- data.frame(mergeID=character(0),nresults=integer(0),selfrel=numeric(0),meanrel=numeric(0),minrel=numeric(0),meandepth=numeric(0),mindepth=numeric(0),meanCR=numeric(0))
+ posCstats <- data.frame(mergeID=character(0),nresults=integer(0),selfrel=numeric(0),meanrel=numeric(0),minrel=numeric(0),
+              meandepth=numeric(0),mindepth=numeric(0),meanCR=numeric(0),mmrate=numeric(0),exp.mmrate=numeric(0),EMM=numeric(0),stringsAsFactors=FALSE)
  sink(paste0("posCchecks",sfx,".txt"),split=TRUE)
  for (i in seq_along(multiIDs)) {
   thisID <- multiIDs[i]
   thispos <- which(mergeIDs==thisID)
-  thisG <- Guse[thispos,thispos]
+  thisG <- Guse[indsubset,indsubset][thispos,thispos]
   selfrel <- mean(diag(thisG))
   meanrel <- mean(upper.vec(thisG))
   minrel <- min(upper.vec(thisG))
-  meandepth <- mean(sampdepth[Gindsubset][thispos])
-  mindepth <- min(sampdepth[Gindsubset][thispos])
+  meandepth <- mean(sampdepth[Gindsubset][indsubset][thispos])
+  mindepth <- min(sampdepth[Gindsubset][indsubset][thispos])
   meanCR <- mean( 1 - rowSums(depthsub[thispos,,drop=FALSE] == 0)/nsnps )
-  posCstats <- rbind(posCstats, data.frame(mergeID=thisID,nresults=length(thispos),selfrel=selfrel,meanrel=meanrel,minrel=minrel,meandepth=meandepth,mindepth=mindepth,meanCR=meanCR))
+  emmstats <- data.frame(mmrate=numeric(0),exp.mmrate=numeric(0))
+  for(ipos in thispos) for(jpos in setdiff(thispos,ipos)) {
+   emmstatstemp <- mismatch.ident(seqIDtemp[ipos],seqIDtemp[jpos],snpsubset=snpsubset,puse=puse)
+   emmstats <- rbind(emmstats,with(emmstatstemp,data.frame(mmrate,exp.mmrate)))
+   }
+  mmrate <- mean(emmstats$mmrate,na.rm=TRUE)
+  exp.mmrate <- mean(emmstats$exp.mmrate,na.rm=TRUE)
+  EMM <- mmrate-exp.mmrate
+  posCstats <- rbind(posCstats, data.frame(mergeID=thisID,nresults=length(thispos),selfrel=selfrel,meanrel=meanrel,minrel=minrel,
+                     meandepth=meandepth,mindepth=mindepth,meanCR=meanCR,mmrate=mmrate,exp.mmrate =exp.mmrate, EMM = EMM, stringsAsFactors=FALSE))
   ulorel <- which(thisG < 1 & thisG - selfrel <= hirel.thresh - 1 & upper.tri(thisG), arr.ind = TRUE)
   if (nrow(ulorel) > 0) print(data.frame(Indiv1 = seqIDtemp[thispos[ulorel[, 1]]], Indiv2 = seqIDtemp[thispos[ulorel[, 2]]], rel = thisG[ulorel]))
   }
@@ -414,9 +631,18 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset) {
  if(nrow(posCstats) > 0) {
   png(paste0("SelfRel",sfx,".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
    with(posCstats,plot(meanrel~selfrel,xlab="Mean within run",ylab="Mean between run",main="Self-relatedness"))
-   abline(a=0,b=1,col="red")
+   abline(a=0,b=1,col="red",lwd=2)
+   lines(x=c(min(posCstats$selfrel), 2-hirel.thresh,max(max(posCstats$selfrel),2-hirel.thresh)),y=c(min(posCstats$selfrel)+hirel.thresh-1,1,1),col="grey",lwd=2)
    dev.off()
-   }
+  png(paste0("posC-MM", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+   with(posCstats,plot(mmrate ~ exp.mmrate, xlab = "Expected mismatch rate", ylab = "Raw mismatch rate", cex=0.8))
+   abline(a=0,b=1,col="red",lwd=2)
+   abline(a=iemm.thresh,b=1,col="grey",lwd=2)
+   dev.off()
+  png(paste0("posC-EMM", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+   with(posCstats,pairs(cbind(meanrel,selfrel,EMM)))
+   dev.off()
+  }
  posCstats
  }
 
@@ -424,16 +650,24 @@ mergeSamples <- function(mergeIDs, indsubset) {
  # doesn't do samples0, so cant do G3 
  if (missing(indsubset)) indsubset <- 1:nind
  mergeIDs <- mergeIDs[indsubset]
- aggr.msum <- rowsum(genon[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE)   # rowsum very fast
- temp <- 1 * !is.na(genon[indsubset,,drop=FALSE])
- aggr.mn <- rowsum(temp,mergeIDs) 
+ hasg <- exists("genon")
+ if(hasg) {
+  aggr.msum <- rowsum(genon[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE)   # rowsum very fast
+  temp <- 1 * !is.na(genon[indsubset,,drop=FALSE])
+  aggr.mn <- rowsum(temp,mergeIDs) 
 # aggr.mn <- rowsum(1 * !is.na(genon[indsubset,,drop=FALSE]),mergeIDs) 
- rm(temp)
- genon.m <- aggr.msum/aggr.mn
- genon.m <- trunc(genon.m-1)+1
- ID.m <- rownames(aggr.msum)
- depth.m <- rowsum(depth.orig[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE)
- nind.m <- nrow(genon.m)
+  rm(temp)
+  genon.m <- aggr.msum/aggr.mn
+  genon.m <- trunc(genon.m-1)+1
+  depth.m <- rowsum(depth.orig[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE)
+  ID.m <- rownames(aggr.msum)
+  sampdepth.m <- rowMeans(depth.m)
+  snpdepth.m <- colMeans(depth.m)
+  pg.m <- colMeans(genon.m, na.rm = TRUE)/2  # allele freq assuming genotype calls
+  }
+ if(alleles.keep | !hasg) alleles.m <- rowsum(alleles[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE) else alleles.m <- NULL
+ if(!hasg) ID.m <- rownames(alleles.m)
+ nind.m <- length(ID.m)
  nseq <- rowsum(rep(1,length(indsubset)),mergeIDs) # results being merged
  seqID.m <- seqID[indsubset][match(ID.m,mergeIDs)]
  seqinfo <- read.table(text=seqID[indsubset][match(ID.m,mergeIDs)],sep="_",fill=TRUE,stringsAsFactors=FALSE)
@@ -444,10 +678,10 @@ mergeSamples <- function(mergeIDs, indsubset) {
   seqinfo[umerged,4] <- 0
   seqID.m <- paste(seqinfo[,1],seqinfo[,2],seqinfo[,3],seqinfo[,4],seqinfo[,5],sep="_")
   }
- sampdepth.m <- rowMeans(depth.m)
- snpdepth.m <- colMeans(depth.m)
- pg.m <- colMeans(genon.m, na.rm = TRUE)/2  # allele freq assuming genotype calls
- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
+ if(hasg) mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
+ if(alleles.keep & hasg) mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, alleles=alleles.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
+ if(!hasg) mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, alleles=alleles.m, nmerged=nseq)
+ mergelist
  }
 
 mergeSamples2 <- function(mergeIDs, indsubset) {  
@@ -491,24 +725,11 @@ mergeSamples2 <- function(mergeIDs, indsubset) {
  }
 
 
-calcp <- function(indsubset, pmethod="A") {
- if(!pmethod == "G") pmethod <- "A"
- if (missing(indsubset))   indsubset <- 1:nind
- if (pmethod == "A") {
-  if (nrow(alleles) == nind) {
-   RAcountstemp <- matrix(colSums(alleles[indsubset,]), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
-   afreqs <- RAcountstemp[, 1]/rowSums(RAcountstemp)  # p for ref allele - based on # reads, not on inferred # alleles
-   } else {
-   afreqs <- NULL
-   print("Error: alleles is wrong size for pmethod A")
-   }
-  }
- if (pmethod == "G") afreqs <- colMeans(genon[indsubset,], na.rm = TRUE)/2  # allele freq assuming genotype calls
- afreqs
- }
-
 calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0, calclevel = 9, cocall.thresh = 0, mdsplot=FALSE,
-                  withPlotly=FALSE, withHeatmaply=withPlotly, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL) {
+                  mindepth.idr = 0.1, withPlotly=FALSE, withHeatmaply=withPlotly, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL) {
+  # example calls:
+  #   Gfull <- calcG(npc=4) 
+  #   GHWdgm.05 <- calcG(which(HWdis > -0.05),'HWdgm.05') # recalculate using Hardy-Weinberg disequilibrium cut-off at -0.05
   # sfx is text to add to GGBS5 as graph name, puse is allele freqs (all snps) to use
   # calclevel: 1: G5 only, 2: G5 + reports using G5, 3: all G, 9: all
   if (missing(snpsubset))   snpsubset <- 1:nsnps
@@ -542,10 +763,10 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
         if(!exists(seqID))
           samp.info <- list("Sample ID"=1:length(indsubset))
         else
-          samp.info <- list("Sample ID"=seqID)
+          samp.info <- list("Sample ID"=seqID[indsubset])
       } else if(!is.list(samp.info)){
         warning("Sample information object is not a list")
-        samp.info <- list("Sample ID"=seqID)
+        samp.info <- list("Sample ID"=seqID[indsubset])
       } else if(any(unlist(lapply(samp.info,function(x) length(x)!=length(indsubset))))){
         stop("Missing or extra sample information. Check that the 'samp.info' object is correct.")
       }
@@ -560,6 +781,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   }
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
+  if (sum(dim(depth) != dim(depth.orig)) >0 ) cat("Warning: depth and depth.orig are different dimensions\n")
   depthsub <- depth.orig[indsubset, snpsubset]
   if(min(depth) < 2) depth[depth < 2] <- 1.1        # in case got here without executing this
   cat("Calculating G matrix, analysis code:", sfx, "\n")
@@ -582,7 +804,12 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    hist(upper.vec(cocall)/nsnpsub, breaks = 50, xlab = "Co-call rate (for sample pairs)", main="", col = "grey")
    dev.off()
   lowpairs <- which(cocall/nsnpsub <= cocall.thresh & upper.tri(cocall),arr.ind=TRUE)
-  sampdepth.max <- apply(depthsub, 1, max)
+  if (have_rcpp) {
+    sampdepth.max <- rcpp_rowMaximums(depthsub, nThreads)
+  }
+  else {
+    sampdepth.max <- apply(depthsub, 1, max)
+  }
   samp.removed <- NULL
   if(cocall.thresh >= 0) {  # remove samples which wont get self-rel
    samp.removed <- which(sampdepth.max < 2)
@@ -617,7 +844,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   
   sampdepthsub <- rowMeans(depthsub)
   # depth0sub <- rowSums(depthsub==0) snpdepthsub <- colMeans(depthsub) snpdepthsub.non0 <- colSums(depthsub>0)/nrow(depthsub)
-  missrate <- sum(depthsub == 0)/nrow(depthsub)/ncol(depthsub)
+  missrate <- sum(as.numeric(depthsub == 0))/nrow(depthsub)/ncol(depthsub)
   cat("Proportion of missing genotypes: ", missrate, "Callrate:", 1-missrate,"\n")
   # callratesub <- 1-rowSums(depthsub==0)/nsnpsub
   cat("Mean sample depth:", mean(sampdepthsub), "\n")
@@ -643,11 +870,17 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   rm(GGBS4top)
   
   genon01 <- genon0
-  genon01[depth[indsubset, snpsubset] < 2] <- 0
   P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = TRUE)
   P1 <- 1 - P0
-  P0[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
-  P1[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
+  if (have_rcpp) {
+    rcpp_assignP0P1Genon01(P0, P1, genon01, usegeno, depth[indsubset, snpsubset], nThreads)
+  }
+  else {
+    genon01[depth[indsubset, snpsubset] < 2] <- 0
+    P0[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
+    P1[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
+  }
+
 #  div0 <- 2 * diag(tcrossprod(P0, P1))  # rowSums version faster
   div0 <- 2 * rowSums(P0 * P1)
   Kdepth <- depth2K(depth[indsubset, snpsubset])
@@ -659,7 +892,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   
   uhirel <- which(GGBS5 > hirel.thresh & upper.tri(GGBS5), arr.ind = TRUE)
   if (nrow(uhirel) > 0 & nsnpsub >= 999) 
-    write.csv(data.frame(Indiv1 = seqID[uhirel[, 1]], Indiv2 = seqID[uhirel[, 2]], G5rel = GGBS5[uhirel], SelfRel1 = GGBS5d[uhirel[,1]], SelfRel2 = GGBS5d[uhirel[,2]] ), 
+    write.csv(data.frame(Indiv1 = seqID[indsubset][uhirel[, 1]], Indiv2 = seqID[indsubset][uhirel[, 2]], G5rel = GGBS5[uhirel], SelfRel1 = GGBS5d[uhirel[,1]], SelfRel2 = GGBS5d[uhirel[,2]] ), 
               paste0("HighRelatedness", sfx, ".csv"), row.names = FALSE)
   if (!npc == 0 ) {
    # check for missing elements and subset to remove
@@ -673,16 +906,16 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
      temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = TRUE))
      if(withHeatmaply){
        if(length(table(pcacolo)) > 1) {
-         temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
+         temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=TRUE,
                              width=1000, height=1000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
-                             labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
+                             labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=FALSE,
                              label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"),
                              ColSideColors=pcacolo, RowSideColors=pcacolo,
                              file=paste0("Heatmap-G5", sfx, ".html")) %>% layout(width=1000,height=1000)
        } else{
-         temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=T,
+         temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=TRUE,
                              width=1000, height=1000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
-                             labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=F,
+                             labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=FALSE,
                              label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"),
                              file=paste0("Heatmap-G5", sfx, ".html"))
        }
@@ -690,10 +923,18 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
        #htmlwidgets::saveWidget(temp_p, paste0("Heatmap-G5", sfx, ".html"))
      } else {
        png(paste0("Heatmap-G5", sfx, ".png"), width = 2000, height = 2000, pointsize = cex.pointsize *  18)
+       if (require(parallelDist)) {
+         cat("Using parallelDist function in heatmap\n")
+         distfun <- parDist
+       }
+       else {
+         cat("Using normal dist function in heatmap\n")
+         distfun <- dist
+       }
        if(length(table(pcacolo)) > 1) {
-         hmout <- heatmap(temp, col = rev(heat.colors(50)), ColSideColors=pcacolo, RowSideColors=pcacolo, symm=T, revC=F)
+         hmout <- heatmap(temp, col = rev(heat.colors(50)), ColSideColors=pcacolo, RowSideColors=pcacolo, symm=TRUE, revC=FALSE, distfun=distfun)
        } else {
-         hmout <- heatmap(temp, col = rev(heat.colors(50)), symm=T, revC=F)
+         hmout <- heatmap(temp, col = rev(heat.colors(50)), symm=TRUE, revC=FALSE, distfun=distfun)
        }
        hmdat <- data.frame(rowInd=hmout$rowInd,seqIDInd=indsubset[pcasamps[hmout$rowInd]],seqID=seqID[indsubset[pcasamps[hmout$rowInd]]])
        write.csv(hmdat,paste0("HeatmapOrder", sfx, ".csv"),row.names=FALSE,quote=FALSE)
@@ -726,7 +967,15 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     #plot(diag(GGBS5) ~ I(sampdepthsub + 1), col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth +1", log="x")
     plot(diag(GGBS5) ~ sampdepthsub, col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth (log scale)", log="x")
     dev.off()
-  }
+    #Slippery slope
+    uss <- which(sampdepthsub >= mindepth.idr)
+    if(length(uss) > 0) {
+     rellm <- lm(diag(GGBS5)[uss] ~  log(sampdepthsub[uss]))
+     slipslope <- coef(rellm)[2]
+     pval <- anova(rellm)[1,"Pr(>F)"]
+     cat("Self-Rel vs log(depth) regression = ", signif(slipslope,3)," p = ",signif(pval,3)," (min depth = ",mindepth.idr,")\n",sep="")
+     }
+   }
   if (calclevel %in% c(2,9)) {
    png(paste0("Gcompare", sfx, ".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
    if (gform == "chip" | !samplesOK)
@@ -744,12 +993,13 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     eval <- sign(PC$d) * PC$d^2/sum(PC$d^2)
     PC$x <- PC$u %*% diag(PC$d[1:npc],nrow=npc)  # nrow to get correct behaviour when npc=1
     cat("minimum eigenvalue: ", min(eval), "\n")  #check for +ve def
-    if(withPlotly){
-      if(npc > 1) {
+    cat("first",2*npc,"eigenvalues:",eval[1:(2*npc)],"\n")
+    if(npc > 1) {
+     if(withPlotly){
         temp_p <- plot_ly(y=PC$x[, 2],x=PC$x[, 1], type="scatter", mode="markers",
                           hoverinfo="text", text=hover.info, width=640 + addpixel, height=640,
                           marker=list(size=cex.pointsize*6), color=plotly.group, symbol=plotly.group2) %>%
-          layout(xaxis=list(title="Principal component 1",zeroline=F), yaxis=list(title="Principal component 2",zeroline=F))
+          layout(xaxis=list(title="Principal component 1",zeroline=FALSE), yaxis=list(title="Principal component 2",zeroline=FALSE))
         htmlwidgets::saveWidget(temp_p, paste0("PC1v2G5", sfx, ".html"))
       } 
       png(paste0("PC1v2G5", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
@@ -771,7 +1021,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
         temp_p <- plot_ly(x=mdsout[,1],y=mdsout[,2], type="scatter", mode="markers", marker=list(size=cex.pointsize*6),
                           width=640 + addpixel, height=640 + addpixel,
                           hoverinfo="text", text=hover.info, color=plotly.group, symbol=plotly.group2) %>%
-          layout(xaxis=list(title="MDS coordinate 1",zeroline=F), yaxis=list(title="MDS coordinate 2",zeroline=F))
+          layout(xaxis=list(title="MDS coordinate 1",zeroline=FALSE), yaxis=list(title="MDS coordinate 2",zeroline=FALSE))
         htmlwidgets::saveWidget(temp_p, paste0("MDS1v2G5", sfx, ".html"))
       }
       else{
@@ -792,6 +1042,7 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
  if (is.list(Guse)) {
   if(!"G5" %in% names(Guse)) stop("Guse is a list without a G5")
   if("PC" %in% names(Guse)) PCtemp <- Guse$PC
+  if("samp.removed" %in% names(Guse)) samp.removed <- Guse$samp.removed
   Guse <- Guse$G5
   Gname <- "G5"
   }     
@@ -818,7 +1069,7 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
   upperRel <- upper.vec(Guse)
   ID1 <- upper.vec(matrix(IDuse,nrow=length(IDuse),ncol=length(IDuse),byrow=FALSE))
   ID2 <- upper.vec(matrix(IDuse,nrow=length(IDuse),ncol=length(IDuse),byrow=TRUE))
-  df.out <- data.frame(ID1=ID1,ID2=ID2,rel=upperRel)
+  df.out <- data.frame(id1=ID1,id2=ID2,rel=upperRel)
   write.csv(df.out,paste0(outname,"-long.csv"),row.names=FALSE,quote=FALSE)
   }
  if(4 %in% outtype) {
@@ -837,6 +1088,7 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
   colnames(PCtemp$x) <- paste0("PC",1:ncol(PCtemp$x))
   PCout <- data.frame(IDuse); colnames(PCout) <- IDname
   if(!is.null(metadf)) PCout <- metadf   #cbind(PCout,metadf)
+  if(length(samp.removed) > 0) PCout <- PCout[-samp.removed,,drop=FALSE]
   PCout <- cbind(PCout,PCtemp$x)
   write.csv(PCout,paste0(outname,"-PC.csv"),row.names=FALSE,quote=FALSE)
   }
@@ -848,16 +1100,18 @@ regpanel <- function(x,y,nvars=3, ...) {
  usr <- par("usr"); on.exit(par(usr))
  par(usr = c(0, 1, 0, 1))
  if(nvars==2)  par(usr = c(-1.5, 1, 0, 2.5))  # use lower RHS
- regn <- summary(lm(x ~ y)) # reverse order to match plot
- regneqn <- paste0("y = ",signif(regn$coefficients[1,1],3),"\n (SE ",signif(regn$coefficients[1,2],2),")\n + ",
-                          signif(regn$coefficients[2,1],3),"x\n (SE ",signif(regn$coefficients[2,2],2),")")
- regnsign <- sign(regn$coefficients[2,1])
- reqnn <- paste0("n = ",sum(regn$df[1:2]))
- reqn <- paste0("r = ",signif(regnsign * sqrt(regn$r.squared),3))
- textcex <- 0.3 + 2/(nvars^.75)   # need to make smaller when more panels
- text(0.5,0.7,labels=regneqn,cex=textcex)
- text(0.5,0.22,labels=reqnn,cex=textcex)
- text(0.5,0.1,labels=reqn,cex=textcex)
+ if(length(na.omit(x*y)) > 1 & var(x,na.rm=TRUE) > 0 & var(y,na.rm = TRUE)) {
+  regn <- summary(lm(x ~ y)) # reverse order to match plot
+  regneqn <- paste0("y = ",signif(regn$coefficients[1,1],3),"\n (SE ",signif(regn$coefficients[1,2],2),")\n + ",
+                           signif(regn$coefficients[2,1],3),"x\n (SE ",signif(regn$coefficients[2,2],2),")")
+  regnsign <- sign(regn$coefficients[2,1])
+  reqnn <- paste0("n = ",sum(regn$df[1:2]))
+  reqn <- paste0("r = ",signif(regnsign * sqrt(regn$r.squared),3))
+  textcex <- 0.3 + 2/(nvars^.75)   # need to make smaller when more panels
+  text(0.5,0.7,labels=regneqn,cex=textcex)
+  text(0.5,0.22,labels=reqnn,cex=textcex)
+  text(0.5,0.1,labels=reqn,cex=textcex)
+  }
  }
 
 GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotname = "", whichplot="both", doBA=FALSE, ...) {
@@ -867,6 +1121,7 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
  if (length(IDlist) != nG) stop("ID list different length to G list")
  if (nG < 2) stop("Nothing to compare")
  allID <- unique(unlist(IDlist))
+ for(iG in 1:nG) if(sum(duplicated(IDlist[[iG]])) > 0) cat("Warning: Duplicated IDs for ",Gnames[iG],"\n")
  if(whichplot %in% c("both","diag")) {
   gcompare <- diag(Glist[[1]])[match(allID,IDlist[[1]])]
   for(iG in 2:nG)  gcompare <- cbind(gcompare,diag(Glist[[iG]])[match(allID,IDlist[[iG]])])
@@ -909,9 +1164,226 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
  invisible(NULL)
  }
 
+## function to use in writeVCF
+genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref, alt
+  nobj <- length(vec)/6
+  outstr <-  paste(vec[1:nobj],paste(vec[nobj+(1:nobj)],vec[2*nobj+(1:nobj)],vec[3*nobj+(1:nobj)],sep=","), 
+                   paste(vec[4*nobj+(1:nobj)],vec[5*nobj+(1:nobj)],vec[6*nobj+(1:nobj)],sep=","), 
+                   paste(vec[7*nobj+(1:nobj)],vec[8*nobj+(1:nobj)],sep=","), sep=":")
+  }
 
+## Write KGD back to VCF file
+writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, usePL=FALSE, contig.meta=FALSE){
+  if (is.null(outname)) outname <- "GBSdata"
+  filename <- paste0(outname,".vcf")
+  if(!exists("alleles"))
+    stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")
+  else if(is.null(alleles))
+    stop("Allele matrix object `alleles` is set to NULL.")
+  else{
+    ref <- alleles[, seq(1, 2 * nsnps - 1, 2)]
+    alt <- alleles[, seq(2, 2 * nsnps, 2)]
+  }
+  ## subset data if required
+  if(missing(indsubset))
+    indsubset <- 1:nind
+  if(missing(snpsubset))
+    snpsubset <- 1:nsnps
+  if (missing(IDuse)) IDuse <- seqID[indsubset]
+  is.big <- (as.numeric(length(indsubset)) * length(snpsubset) > 2^31-1 )
+  ref <- ref[indsubset, snpsubset]
+  alt <- alt[indsubset, snpsubset]
+  genon0 <- genon[indsubset, snpsubset]
+  pmat <- matrix(puse[snpsubset], nrow=length(indsubset), ncol=length(snpsubset), byrow=TRUE)
+  
+  # Meta information
+  metalik <-  '##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype Likelihood">'
+  if(usePL)   metalik <-  '##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Phred-scaled Genotype Likelihood (rounded)">'
+  metaInfo <- paste('##fileformat=VCFv4.3',paste0("##fileDate=",Sys.Date()),"##source=KGDpackage",
+                    '##INFO=<ID=INDEL,Number=0,Type=Flag,Description="dummy">',
+                    '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+                    '##FORMAT=<ID=GP,Number=G,Type=Float,Description="Genotype Probability">', 
+                    metalik, 
+                    '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele Read Counts">\n',sep="\n")
+  cat(metaInfo, file=filename)
+  if(contig.meta) write.table(cbind("##contig=<ID=",SNP_Names[snpsubset],">"),file=filename,sep="",quote=FALSE,row.names=FALSE,col.names=FALSE,append=TRUE)
+  ## colnames:
+  cat(c("#CHROM", "POS", "ID", "REF","ALT","QUAL","FILTER","INFO","FORMAT", IDuse), file=filename, append=TRUE, sep="\t")
+  cat("\n", file=filename, append=TRUE, sep="\t")
+  ## set up the matrix to be written
+  out <- matrix(nrow=length(snpsubset),ncol=9+length(indsubset))
+  
+  ## Compute the Data line fields
+  if(gform == "Tassel"){
+    out[,1] <- chrom[snpsubset]
+    out[,2] <- pos[snpsubset]
+  }
+  else{
+    out[,1] <- SNP_Names[snpsubset]
+    out[,2] <- 1:length(snpsubset)
+  }
+  out[,3] <- SNP_Names[snpsubset]
+  out[,4] <- rep("C", length(snpsubset))
+  out[,5] <- rep("G", length(snpsubset))
+  out[,6] <- rep(".", length(snpsubset))
+  out[,7] <- rep(".", length(snpsubset))
+  out[,8] <- rep(".", length(snpsubset))
+  out[,9] <- rep("GT:GP:GL:AD", length(snpsubset))
+  if(usePL)  out[,9] <- rep("GT:GP:PL:AD", length(snpsubset))
 
-# example calls Gfull <- calcG(npc=4) GHWdgm.05 <- calcG(which(HWdis > -0.05),'HWdgm.05') # recalculate using Hardy-Weinberg
-# disequilibrium cut-off at -0.05
+  
+  ## compute probs
+  paa <- (1-ep)^ref*ep^alt*pmat^2
+  pab <- (1/2)^(ref+alt)*2*pmat*(1-pmat)
+  pbb <- ep^ref*(1-ep)^alt*(1-pmat)^2
+  psum <- paa + pab + pbb
+  paa <- round(paa/psum,4)
+  pab <- round(pab/psum,4)
+  pbb <- round(pbb/psum,4)
+  ## compute likelihood values
+  compLike <- function(x) 1/2^(ref+alt)*((2-x)*ep + x*(1-ep))^ref * ((2-x)*(1-ep) + x*ep)^alt
+  llaa <- log10(compLike(2))
+  llab <- log10(compLike(1))
+  llbb <- log10(compLike(0))
+  llaa[is.infinite(llaa)] <- -1000
+  llab[is.infinite(llab)] <- -1000
+  llbb[is.infinite(llbb)] <- -1000
+  #phred-scaled ...
+  minll <- pmax(llaa,llab,llbb)
+  plaa <- -10 * round(llaa - minll,0)
+  plab <- -10 * round(llab - minll,0)
+  plbb <- -10 * round(llbb - minll,0)
+  llaa <- round(llaa,4)
+  llab <- round(llab,4)
+  llbb <- round(llbb,4)
+  if(usePL) { # replace ll with pl versions
+   llaa <- plaa
+   llab <- plab
+   llbb <- plbb
+   }
+  ## Create the data part
+  temp <- options()$scipen
+  options(scipen=10)  #needed for formating
+  ## Compute the genotype fields
+  genon0[is.na(genon0)] <- -1
+  if (is.big) {
+   gt <- apply(genon0+2, 2, function(x) c("./.","1/1","0/1","0/0")[x])
+   out2[,-c(1:9)] <- apply(cbind(gt,paa,pab,pbb,llaa,llab,llbb,ref,alt),1,genostring)
+   } else {
+   gt <- sapply(as.vector(genon0), function(x) switch(x+2,"./.","1/1","0/1","0/0"))
+   out[,-c(1:9)] <- matrix(paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","), sep=":"), 
+                           nrow=length(snpsubset), ncol=length(indsubset), byrow=TRUE)
+   }
+  options(scipen=temp)
+  
+  ## fwrite is much faster
+  if(require(data.table))
+    fwrite(split(t(out), 1:(length(indsubset)+9)), file=filename, sep="\t", append=TRUE, nThread = 1)
+  else
+    write.table(out, file = filename, append = T, sep="\t", col.names = F, row.names=FALSE, quote=FALSE)
+  return(invisible(NULL))
+}
 
+writeGBS <- function(indsubset,snpsubset,outname="HapMap.hmc.txt",outformat=gform,seqIDuse=seqID) {
+ written <- FALSE
+  if(!exists("alleles"))
+    stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")
+  else if(is.null(alleles))
+    stop("Allele matrix object `alleles` is set to NULL.")
+  if(nrow(alleles) != nrow(genon) | ncol(alleles) != 2* ncol(genon)) stop("Allele matrix does not correspond to genotype matrix")
+  if(missing(indsubset)) indsubset <- 1:nind
+  if(missing(snpsubset)) snpsubset <- 1:nsnps
+  ref <- alleles[indsubset, seq(1, 2 * nsnps - 1, 2)[snpsubset]]
+  alt <- alleles[indsubset, seq(2, 2 * nsnps, 2)[snpsubset]]
+  genonsub <- genon[indsubset,snpsubset]
+ if(outformat == "uneak") {
+  HetCount_allele1 <- colSums(ref * (genonsub == 1), na.rm=TRUE)
+  HetCount_allele2 <- colSums(alt * (genonsub == 1), na.rm=TRUE)
+  allelespos <- seq(2, 2 * nsnps, 2)[snpsubset]
+  allelespos <- sort(c(allelespos,allelespos-1))
+  acounts <- colSums(alleles[indsubset,allelespos])
+  Count_allele1 <- colSums(ref)
+  Count_allele2 <- colSums(alt)
+  outmtx <- matrix(paste(t(ref),t(alt),sep="|"),nrow=length(snpsubset),ncol=length(indsubset))
+  colnames(outmtx) <- seqIDuse[indsubset]
+#  colnames(outmtx) <- c("rs",seqIDuse[indsubset],"hetc1","hetc2","acount1","acount2","p")
+  write.table(cbind(rs=SNP_Names[snpsubset],outmtx,HetCount_allele1,HetCount_allele2,Count_allele1,Count_allele2,Frequency=round(p[snpsubset],3)),
+       outname,row.names=FALSE,quote=FALSE,sep="\t")
+  written <- TRUE
+  } 
+ if(!written) cat("No file written output format not yet available\n")
+ invisible(NULL)
+ }
+
+### functions for gender testing ####
+upperboundary <- function(x){ 20*pmax(rep(0,length(x)),x)^2+0.2} 
+lowerboundary <- function(x){ 0.1 + x} 
+
+genderassign <- function(ped.df, index_Y_SNPs, index_X_SNPs, sfx="", hetgamsex = "M", homgamsex = "F", hetchrom = "Y", homchrom = "X") {
+ #ped.df is a dataframe of individuals for gender prediction, as if read from a pedigree file
+ #   optionally contains variables Sex (with values M, F or U for male, female, unknown)
+ #              and Relationship (character, e.g. "progeny", "sire" or "dam")
+ # uses upperboundary and lowerboundary vector functions. upperboundary can be nonlinear. 
+ cat("Gender Prediction\n")
+ cat(length(index_Y_SNPs), "Y chromosome SNPs\n")
+ cat(length(index_X_SNPs), "X chromosome SNPs\n")
+ genopos <- match(ped.df$seqID,seqID)
+
+ #proporton of SNPs an individual has on the Y chromosome
+ proportion_SNPs_Y <- apply(genon[genopos,index_Y_SNPs],1, function(x) sum(!is.na(x))/length(index_Y_SNPs)) #sums number non-missing SNPs #over total SNPs on Y
+ #proportion of heterozygosity on the X chromosome
+ proportion_Hetero_X <- apply(genon[genopos,index_X_SNPs],1, function(x) sum(x=="1")/sum(!is.na(x))) #######the genon matrix may have to be changed to hetero_X_genon  
+ K_matrix <- 1-2*depth2K(depth.orig[genopos,index_X_SNPs])
+ K_matrix[K_matrix == -1]<- NaN    #turns values that are -1 (so depth of zero) to NaN
+ row_sum_K_matrix<-rowSums(K_matrix,na.rm=TRUE) #sums up the rows 
+ total_points_X<-apply(genon[genopos,index_X_SNPs],1,function(x) sum(!is.na(x))) #works out the number of non-missing points on the X chromosome
+ E<-row_sum_K_matrix/total_points_X  #divides total K of a row by the number of SNPs on that chromosome
+ new_prop_X<-proportion_Hetero_X/E #new depth adjusted proportion of heterozygosity used in subsequent analysis 
+
+ gender_prediction <- rep("Uncertain",nrow(ped.df))
+ gender_prediction[which(proportion_SNPs_Y > upperboundary(new_prop_X))] <- hetgamsex
+ gender_prediction[which(proportion_SNPs_Y < lowerboundary(new_prop_X))] <- homgamsex
+ females <- sum(gender_prediction==homgamsex) #counts number of females #found
+ males <- sum(gender_prediction == hetgamsex) #counts numbers of males #found 
+ uncertains <-sum(gender_prediction == "Uncertain") #counts number #of uncertains found 
+ cat(females, homgamsex,"predicted\n") #prints number of females #predicted 
+ cat(males, hetgamsex, "predicted\n") #prints number of males predicted
+ cat(uncertains, "not able to be predicted\n") #prints number of #uncertains 
+
+ if(!"Sex" %in% colnames(ped.df)) ped.df$Sex <- "U" 
+ print(addmargins(table(Recorded=ped.df$Sex,gender_prediction,useNA="ifany")))
+ gender_output <- data.frame(ped.df, gender_prediction,new_prop_X,proportion_SNPs_Y,sampdepth=sampdepth[genopos],stringsAsFactors=FALSE)
+ write.csv(gender_output,file=paste0("gender_prediction",sfx,".csv"),row.names=FALSE)
+
+ maxx <- max(0.37,new_prop_X,na.rm=TRUE) 
+ maxy <- length(index_Y_SNPs)
+ plotch <- rep(19,nrow(ped.df))
+ if("Relationship" %in% colnames(ped.df)) {
+  rellevels <- unique(ped.df$Relationship)
+  plotcharset <- c(20,17,18,15,1:14,65:90)[1:length(rellevels)]
+  plotch <- plotcharset[match(ped.df$Relationship,rellevels)]
+  }
+ gendercol<- c("blue","red","grey","grey")[match(ped.df$Sex ,c("M","F","U", NA))]
+ maxxupper <- optimise(function(x) abs(upperboundary(x)-1),lower=0,upper=maxx)$minimum
+ png(file=paste0("GenderPlot",sfx,".png"), height=640, width=640, pointsize = cex.pointsize *  15)
+  plot(new_prop_X, maxy*proportion_SNPs_Y, xlab=paste0("Heterozygosity (",homchrom," chr)"), ylab=paste(hetchrom,"chr SNPs"), col=gendercol, 
+        pch=plotch, cex.axis=1.2, cex.lab=1.2, ylim=c(0,maxy), xlim=c(0,maxx))
+  ucheck <-  which(ped.df$Sex != gender_prediction)
+  points(new_prop_X[ucheck], maxy*proportion_SNPs_Y[ucheck],col=gendercol[ucheck],pch=plotch[ucheck]) #highlight discrepancies
+  edges <- par("usr"); #minx maxx miny maxy plotting area
+#  poly1 <- data.frame(x1 = c(edges[1],edges[2],edges[2],edges[1],edges[1]), 
+#                      y1 = c(lowerboundary(edges[1])*,maxy,lowerboundary(edges[2])*maxy,edges[3],edges[3],lowerboundary(edges[1])*maxy))
+  poly1 <- data.frame(x1 = c(seq(edges[1],edges[2]+.01,0.01),edges[2],edges[1],edges[1]), 
+                      y1 = c(lowerboundary(seq(edges[1],edges[2]+.01,0.01))*maxy,edges[3],edges[3],lowerboundary(edges[1])*maxy))
+  #poly2 <- data.frame(x2 = c(seq(0,0.2,0.01),0,0), y2=c(upperboundary(seq(0,0.2,0.01)),1,0)*maxy) 
+  poly2 <- data.frame(x2 = c(seq(edges[1],maxxupper,0.01),maxxupper,edges[1],edges[1]), 
+                      y2 = c(maxy*upperboundary(seq(edges[1],maxxupper,0.01)),edges[4],edges[4],maxy*upperboundary(edges[1])))
+  polygon(poly1,col = rgb(homgamsex=="F",0,homgamsex=="M",alpha=0.1),border=NA) 
+  polygon(poly2,col = rgb(hetgamsex=="F",0,hetgamsex=="M",alpha=0.1),border=NA)
+  legend(x=0.8*maxx,y=0.99*edges[4],legend=c("Male","Female","Unknown"),pch=19,col=c("blue","red","grey"),title="Recorded", cex=0.9)
+  legend(x=0.55*maxx,y=0.99*edges[4],legend=c("Male","Female"),fill=c(rgb(0,0,1,alpha=0.2),rgb(1,0,0,alpha=0.2)),border=NA,title="Assigned", bg="white",cex=0.9)
+  if("Relationship" %in% colnames(ped.df)) legend(x=0.8*maxx,y=0.75*maxy,legend=rellevels,pch=plotcharset,title="Type",cex=0.9)   
+  dev.off()
+ gender_output 
+ }
 

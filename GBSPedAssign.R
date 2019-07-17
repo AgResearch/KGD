@@ -1,7 +1,8 @@
 #!/bin/echo Source me don't execute me 
 
 # assume all in pedfile are in the genotype results. To do: remove those that are not
-OK4ped <- TRUE
+OK4ped <- TRUE 
+if (!exists("developer"))    developer   <- FALSE
 if (!exists("rel.thresh"))   rel.thresh  <- 0.4
 if (!exists("rel.threshF"))  rel.threshF <- rel.thresh
 if (!exists("rel.threshM"))  rel.threshM <- rel.thresh
@@ -11,7 +12,8 @@ if (!exists("emmdiff.thresh2"))  emmdiff.thresh2 <-0  # alternate parent-pair ba
 if (!exists("inb.thresh"))   inb.thresh  <- 0.2       # par relatedness - 2 * inbreeding
 if (!exists("minr4inb"))     minr4inb    <- NULL      # par relatedness - inbreeding
 if (!exists("boota.thresh")) boota.thresh <- 99       # assignment threshold
-if (!exists("mindepth.mm")) mindepth.mm <- 1            # changed to 1 to coincide to change to using exp mm rate
+if (!exists("mindepth.mm")) mindepth.mm <- 1          # changed to 1 to coincide to change to using exp mm rate
+if (!exists("matchmethod")) matchmethod <- "rel"      # choose best 2 parents based on "rel" or "EMM"
 if (!exists("indsubset")) indsubset <- seq_along(seqID)
 if (!exists("snpsubset")) snpsubset <- seq(nsnps)
 if (!exists("depth.min")) depth.min <- 0    # for bootstrapping
@@ -24,6 +26,7 @@ cat("Parentage parameter settings\n----------------------------\n rel.threshF\t"
     "\n emm.thresh\t",emm.thresh,
     "\n emm.thresh2\t",emm.thresh2,
     "\n emmdiff.thresh2\t",emmdiff.thresh2,
+    "\n mindepth.mm\t",mindepth.mm,
     "\n inb.thresh\t",inb.thresh," (parent relatedness v inbreeding)",
     "\n minr4inb\t",minr4inb,
     "\n boota.thresh\t",boota.thresh,
@@ -31,6 +34,7 @@ cat("Parentage parameter settings\n----------------------------\n rel.threshF\t"
     "\n depth.max\t",depth.max," (for bootstrapping)",
     "\n nboot\t\t",nboot,
     "\n boot.thresh\t",boot.thresh," (relatedness difference to invoke bootstrapping)",
+    "\n matchmethod\t",matchmethod,
     "\n")
 if(length(indsubset) != nrow(eval(parse(text = GCheck)))) {
  OK4ped <- FALSE
@@ -70,6 +74,42 @@ mismatch.par <- function(offspring.id, par.id) {
    ug <- which(pi==0)
    if(length(ug)>0) expmm[ug] <- P[ug] *(ptemp[ug]*Ko[ug] + (1-ptemp[ug])*Kp[ug] + Kp[ug]*Ko[ug] ) / ((1-ptemp[ug])^2+2*P[ug]*Ko[ug])
    exp.mmrate[ioffspring] <- mean(expmm,na.rm=TRUE)
+  }
+  mmrate <- nmismatch/ncompare
+  list(mmrate=mmrate,ncompare=ncompare,exp.mmrate=exp.mmrate)
+}
+
+cemult <- function(x,A) t(x*t(A))  # columnwise elementwise mult of A by x (usually length(x) = nrow(A))
+ceadd  <- function(x,A) t(x+t(A))  # columnwise elementwise add  of A by x (usually length(x) = nrow(A))
+
+mismatch.par.comb <- function(offspring.id, par.id) {
+  # ids as in the pedigree file, all combs of offspring and parent (for given parent type)
+  noffspring <- length(offspring.id)
+  nmismatch <- ncompare <- exp.mmrate <- matrix(NA, nrow=noffspring,ncol=length(par.id))
+  opos <- match(pedinfo$seqID[match(offspring.id, pedinfo$IndivID)], seqID)
+  ppos <- match(pedinfo$seqID[match(par.id, pedinfo$IndivID)], seqID)
+  depthj <- depth.orig[ppos, ]
+  Kpall  <-  depth2K(depthj)
+  for (ioffspring in 1:noffspring) {
+   depthi <- depth.orig[opos[ioffspring], ]
+   usnp <- intersect(snpsubset,which(depthi >= mindepth.mm)) 
+   pi <- genon[opos[ioffspring], usnp]/2
+   pj <- genon[ppos, usnp]/2
+   Ko  <-  depth2K(depthi[usnp])
+   Kp  <-  Kpall[,usnp]
+   nmismatch[ioffspring,] <- rowSums((abs(matrix(pi,nrow=nrow(pj),ncol=ncol(pj),byrow=TRUE) - pj) == 1),na.rm=TRUE)
+   ncompare[ioffspring,] <- rowSums(!is.na(pj)) 
+   ptemp <- puse[usnp]
+   P <- ptemp*(1-ptemp)
+   expmm <- matrix(NA,ncol=length(usnp),nrow=length(par.id))
+   ug <- which(pi==1)
+   if(length(ug)>0) expmm[,ug] <- cemult(P[ug]/ (ptemp[ug]^2+2*P[ug]*Ko[ug]), ceadd((1-ptemp[ug])*Ko[ug],cemult(ptemp[ug],Kp[,ug])  + cemult(Ko[ug],Kp[,ug])) ) 
+   ug <- which(pi==0.5)
+   if(length(ug)>0) expmm[,ug] <- 0
+   ug <- which(pi==0)
+   if(length(ug)>0) expmm[,ug] <- cemult(P[ug]/ ((1-ptemp[ug])^2+2*P[ug]*Ko[ug]) , ceadd(ptemp[ug]*Ko[ug], cemult((1-ptemp[ug]),Kp[,ug]) + cemult(Ko[ug],Kp[,ug]) )) 
+   expmm[which(is.na(pj) | (depthj[,usnp] < mindepth.mm)) ] <- NA
+   exp.mmrate[ioffspring,] <- rowMeans(expmm,na.rm=TRUE)
   }
   mmrate <- nmismatch/ncompare
   list(mmrate=mmrate,ncompare=ncompare,exp.mmrate=exp.mmrate)
@@ -119,9 +159,11 @@ parmatch <- function(partype, Gmatrix) {
   offspringpos <- match(pedinfo$seqID, seqID[indsubset])  # all in pedigree file considered as offspring
   parpos <- match(ParseqID, seqID[indsubset])
   ParRel <- Gmatrix[cbind(offspringpos, parpos)]
-  ParMatch <- (ParRel > ifelse(partype == "Father", rel.threshF,rel.threshM))
+  Parmm <- mismatch.par(pedinfo$IndivID,pedinfo[, paste0(partype, "ID")])
+  ParEMM <- Parmm$mmrate - Parmm$exp.mmrate
+  ParMatch <- (ParRel > ifelse(partype == "Father", rel.threshF,rel.threshM) & ParEMM < emm.thresh)
   png(paste0(partype, "Verify.png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
-   pairs(cbind(ParRel, offspringpos, parpos), labels = c("Relatedness", "Offspring order", paste(partype, "order")))
+   pairs(cbind(ParRel, ParEMM, offspringpos, parpos), labels = c("Relatedness", "EMM", "Offspring order", paste(partype, "order")))
    dev.off()
   ncompare <- sum(!is.na(ParMatch))
   nmatch <- sum(ParMatch, na.rm = TRUE)
@@ -131,24 +173,41 @@ parmatch <- function(partype, Gmatrix) {
     cat("Mean relatedness for", partype, "matches", format(mean(ParRel[which(ParMatch)]), digits = 3), "\n")
   if (ncompare > nmatch) 
     cat("Mean relatedness for", partype, "non-matches", format(mean(ParRel[which(!ParMatch)]), digits = 3), "\n")
-  matchinfo <- data.frame(ParRel, ParMatch)
-  names(matchinfo) <- paste0(partype, c("Rel", "Match"))
+  matchinfo <- data.frame(ParRel, ParEMM, ParMatch)
+  names(matchinfo) <- paste0(partype, c("Rel", "EMM", "Match"))
   cbind(pedinfo, matchinfo)
 }
 
-bestmatch <- function(ospos, parpos, Guse, partype) {
-  if (missing(partype)) 
-    partype <- "Par"
-  parchk <- Guse[ospos, parpos,drop=FALSE]
-  maxpos <- apply(parchk, 1, which.max)
-  parchktemp <- parchk
-  parchktemp[cbind(1:nrow(parchk), maxpos)] <- -1
-  maxpos.2 <- apply(parchktemp, 1, which.max)
-  rm(parchktemp)
-  maxrel <- cbind(parchk[cbind(1:nrow(parchk), maxpos)], parchk[cbind(1:nrow(parchk), maxpos.2)])
-  rel12 <- Guse[cbind(parpos[maxpos],parpos[maxpos.2])]
-  out.df <- data.frame(seqID[indsubset][ospos], seqID[indsubset][parpos[maxpos]], seqID[indsubset][parpos[maxpos.2]], 
-            relatedness = maxrel[, 1], rel2nd = maxrel[, 2], rel12=rel12, stringsAsFactors = FALSE)
+bestmatch <- function(ospos, parpos, Guse, partype, matchcriterion = "rel") {
+  #matchcriterion == "EMM" added later, but made to work exactly the same (will redo EMM for best 2 later)
+  if(!matchcriterion == "EMM") matchcriterion <- "rel"
+  if (missing(partype)) partype <- "Par"
+  if(length(parpos) > 0 ) {
+   diag(Guse) <- -1     # prevent self-parenting
+   parchk <- Guse[ospos, parpos,drop=FALSE]
+   if(matchcriterion == "rel") {
+    maxpos <- apply(parchk, 1, which.max)
+    parchktemp <- parchk
+    parchktemp[cbind(1:nrow(parchk), maxpos)] <- -1
+    maxpos.2 <- apply(parchktemp, 1, which.max)
+    rm(parchktemp)
+    }
+   if(matchcriterion == "EMM") {
+    offspringID.bm <- pedinfo$IndivID[match(seqID[indsubset][ospos],pedinfo$seqID)]
+    parGroupID.bm <- pedinfo$IndivID[match(seqID[indsubset][parpos],pedinfo$seqID)]
+    mm.bm <- mismatch.par.comb(offspringID.bm,parGroupID.bm)
+    EMMchk <- with(mm.bm,mmrate-exp.mmrate)
+    maxpos <- apply(EMMchk, 1, which.min)
+    EMMchk[cbind(1:nrow(EMMchk), maxpos)] <- 1
+    maxpos.2 <- apply(EMMchk, 1, which.min)
+    }
+   maxrel <- cbind(parchk[cbind(1:nrow(parchk), maxpos)], parchk[cbind(1:nrow(parchk), maxpos.2)])
+   rel12 <- Guse[cbind(parpos[maxpos],parpos[maxpos.2])]
+   out.df <- data.frame(seqID[indsubset][ospos], seqID[indsubset][parpos[maxpos]], seqID[indsubset][parpos[maxpos.2]], 
+             relatedness = maxrel[, 1], rel2nd = maxrel[, 2], rel12=rel12, stringsAsFactors = FALSE)
+   } else {
+   out.df <- data.frame(character(0),character(0),character(0),numeric(0),numeric(0),numeric(0), stringsAsFactors = FALSE)
+   }
   names(out.df) <- c("seqID", paste0("Best", partype, "Match"), paste0(partype, "Match2nd"), paste0(partype, "rel"), paste0(partype, "rel2nd"), paste0(partype, "12rel") )
   out.df
 }
@@ -168,125 +227,208 @@ groupmatch <- function(Guse, partype) {
       ParGroupseqID <- with(pedinfo, seqID[match(ParGroupID, IndivID)])
       offspringpos <- match(offspringseqID, seqID[indsubset])
       parpos <- match(ParGroupseqID, seqID[indsubset])
-      gmatch <- bestmatch(offspringpos, parpos, Guse, partype)
-      if (g == 1) 
-        allgmatch <- gmatch else allgmatch <- rbind(allgmatch, gmatch)
-    }
+      gmatch <- bestmatch(offspringpos, parpos, Guse, partype, matchcriterion = matchmethod)
+      if (g == 1) allgmatch <- gmatch else allgmatch <- rbind(allgmatch, gmatch)
+      }
     allgmatch$IndivID <- pedinfo$IndivID[match(allgmatch$seqID, pedinfo$seqID)]
     ncolallg <- ncol(allgmatch)
     allgmatch <- allgmatch[, c(ncolallg, 1:(ncolallg-1))]
-    allgmatch[, paste0("Best", partype, "Match")] <- pedinfo$IndivID[match(allgmatch[, paste0("Best", partype, "Match")], pedinfo$seqID)]
-    allgmatch[, paste0(partype, "Match2nd")] <- pedinfo$IndivID[match(allgmatch[, paste0(partype, "Match2nd")], pedinfo$seqID)]
-    mmstats <- mismatch.par(allgmatch$IndivID, allgmatch[, paste0("Best", partype, "Match")])
-    allgmatch[, paste0("mmrate", partype)] <- mmstats$mmrate
-    allgmatch[, paste0("mmnum", partype)] <- mmstats$ncompare
-    allgmatch[, paste0("exp.mmrate", partype)] <- mmstats$exp.mmrate
-    mmstats <- mismatch.par(allgmatch$IndivID, allgmatch[, paste0(partype, "Match2nd")])
-    allgmatch[, paste0("mmrate", partype,"2")] <- mmstats$mmrate
-    allgmatch[, paste0("exp.mmrate", partype,"2")] <- mmstats$exp.mmrate
-    EMMrate <- allgmatch[, paste0("mmrate", partype)] - allgmatch[, paste0("exp.mmrate", partype)]
-    EMMrate2 <- allgmatch[, paste0("mmrate", partype, "2")] - allgmatch[, paste0("exp.mmrate", partype, "2")] 
-    ### bootstrap section
-    bootpos <- which(allgmatch[,paste0(partype, "rel")] > rel.thresh & EMMrate < emm.thresh & allgmatch[,paste0(partype, "rel")] - allgmatch[,paste0(partype, "rel2nd")] < boot.thresh)
-    nsnpsub <- length(snpsubset)
-    if(length(bootpos) > 0) {
-     for(bcase in seq_along(bootpos)) {
-      offspringseqID <- allgmatch$seqID[bootpos[bcase]]
-      ParseqID <- with(pedinfo, seqID[match(allgmatch[bootpos[bcase], paste0("Best", partype, "Match")], IndivID)])
-      Par2seqID <- with(pedinfo, seqID[match(allgmatch[bootpos[bcase], paste0(partype, "Match2nd")], IndivID)])
-      offspringpos <- match(offspringseqID, seqID[indsubset])
-      parpos <- match(ParseqID, seqID[indsubset])
-      par2pos <- match(Par2seqID, seqID[indsubset])
-      offs.depth <- depth.orig[indsubset[offspringpos], snpsubset]
-      par.depth <-  depth.orig[indsubset[parpos], snpsubset]
-      par2.depth <-  depth.orig[indsubset[par2pos], snpsubset]
-      offs.genon0 <- genon[indsubset[offspringpos], snpsubset]
-      par.genon0 <- genon[indsubset[parpos], snpsubset]
-      par2.genon0 <- genon[indsubset[par2pos], snpsubset]
-      if (depth.min > 1 | depth.max < Inf) {
-       offs.genon0[offs.depth < depth.min] <- NA
-       offs.genon0[offs.depth > depth.max] <- NA
-       par.genon0[par.depth < depth.min] <- NA
-       par.genon0[par.depth > depth.max] <- NA
-       offs.depth[is.na(offs.genon0)] <- 0
-       par.depth[is.na(par.genon0)] <- 0
+    if (nrow(allgmatch) > 0) {
+     allgmatch[, paste0("Best", partype, "Match")] <- pedinfo$IndivID[match(allgmatch[, paste0("Best", partype, "Match")], pedinfo$seqID)]
+     allgmatch[, paste0(partype, "Match2nd")] <- pedinfo$IndivID[match(allgmatch[, paste0(partype, "Match2nd")], pedinfo$seqID)]
+     mmstats <- mismatch.par(allgmatch$IndivID, allgmatch[, paste0("Best", partype, "Match")])
+     allgmatch[, paste0("mmrate", partype)] <- mmstats$mmrate
+     allgmatch[, paste0("mmnum", partype)] <- mmstats$ncompare
+     allgmatch[, paste0("exp.mmrate", partype)] <- mmstats$exp.mmrate
+     mmstats <- mismatch.par(allgmatch$IndivID, allgmatch[, paste0(partype, "Match2nd")])
+     allgmatch[, paste0("mmrate", partype,"2")] <- mmstats$mmrate
+     allgmatch[, paste0("exp.mmrate", partype,"2")] <- mmstats$exp.mmrate
+     EMMrate <- allgmatch[, paste0("mmrate", partype)] - allgmatch[, paste0("exp.mmrate", partype)]
+     EMMrate2 <- allgmatch[, paste0("mmrate", partype, "2")] - allgmatch[, paste0("exp.mmrate", partype, "2")] 
+     ### bootstrap section
+     bootpos <- which(allgmatch[,paste0(partype, "rel")] > rel.thresh & EMMrate < emm.thresh & allgmatch[,paste0(partype, "rel")] - allgmatch[,paste0(partype, "rel2nd")] < boot.thresh)
+     nsnpsub <- length(snpsubset)
+     if(length(bootpos) > 0) {
+      for(bcase in seq_along(bootpos)) {
+       offspringseqID <- allgmatch$seqID[bootpos[bcase]]
+       ParseqID <- with(pedinfo, seqID[match(allgmatch[bootpos[bcase], paste0("Best", partype, "Match")], IndivID)])
+       Par2seqID <- with(pedinfo, seqID[match(allgmatch[bootpos[bcase], paste0(partype, "Match2nd")], IndivID)])
+       offspringpos <- match(offspringseqID, seqID[indsubset])
+       parpos <- match(ParseqID, seqID[indsubset])
+       par2pos <- match(Par2seqID, seqID[indsubset])
+       offs.depth <- depth.orig[indsubset[offspringpos], snpsubset]
+       par.depth <-  depth.orig[indsubset[parpos], snpsubset]
+       par2.depth <-  depth.orig[indsubset[par2pos], snpsubset]
+       offs.genon0 <- genon[indsubset[offspringpos], snpsubset]
+       par.genon0 <- genon[indsubset[parpos], snpsubset]
+       par2.genon0 <- genon[indsubset[par2pos], snpsubset]
+       if (depth.min > 1 | depth.max < Inf) {
+        offs.genon0[offs.depth < depth.min] <- NA
+        offs.genon0[offs.depth > depth.max] <- NA
+        par.genon0[par.depth < depth.min] <- NA
+        par.genon0[par.depth > depth.max] <- NA
+        offs.depth[is.na(offs.genon0)] <- 0
+        par.depth[is.na(par.genon0)] <- 0
+        }
+       offs.usegeno <- !is.na(offs.genon0)
+       par.usegeno <- !is.na(par.genon0)
+       par2.usegeno <- !is.na(par2.genon0)
+       offs.genon0 <- offs.genon0 - rep.int(2 * puse[snpsubset], rep(1, nsnpsub))
+       offs.genon0[is.na(offs.genon0)] <- 0     # equivalent to using 2p for missing genos
+       par.genon0 <- par.genon0 - rep.int(2 * puse[snpsubset], rep(1, nsnpsub))
+       par.genon0[is.na(par.genon0)] <- 0     # equivalent to using 2p for missing genos
+       par2.genon0 <- par2.genon0 - rep.int(2 * puse[snpsubset], rep(1, nsnpsub))
+       par2.genon0[is.na(par2.genon0)] <- 0     # equivalent to using 2p for missing genos
+#       relcheck <- tcrossprod(matrix(offs.genon0,nrow=1),matrix(par.genon0,nrow=1)) / 
+#                   sum((2*puse[snpsubset]*(1-puse[snpsubset]))[offs.usegeno & par.usegeno])
+       bootrels <-     bootrels2 <- double(nboot)
+       for (b in seq(nboot)) {
+        bootsnps <- sample.int(nsnpsub,replace=TRUE)
+        bootrels[b] <- tcrossprod(matrix(offs.genon0[bootsnps],nrow=1),matrix(par.genon0[bootsnps],nrow=1)) / 
+                   sum((2*puse[snpsubset[bootsnps]]*(1-puse[snpsubset[bootsnps]]))[offs.usegeno[bootsnps] & par.usegeno[bootsnps]])
+        bootrels2[b] <- tcrossprod(matrix(offs.genon0[bootsnps],nrow=1),matrix(par2.genon0[bootsnps],nrow=1)) / 
+                   sum((2*puse[snpsubset[bootsnps]]*(1-puse[snpsubset[bootsnps]]))[offs.usegeno[bootsnps] & par2.usegeno[bootsnps]])
+        }
+       allgmatch[bootpos[bcase],paste0(partype,"sd")] <- sd(bootrels) 
+       allgmatch[bootpos[bcase],paste0(partype,"Reliability")] <- 100*sum(bootrels > bootrels2) /nboot
        }
-      offs.usegeno <- !is.na(offs.genon0)
-      par.usegeno <- !is.na(par.genon0)
-      par2.usegeno <- !is.na(par2.genon0)
-      offs.genon0 <- offs.genon0 - rep.int(2 * puse[snpsubset], rep(1, nsnpsub))
-      offs.genon0[is.na(offs.genon0)] <- 0     # equivalent to using 2p for missing genos
-      par.genon0 <- par.genon0 - rep.int(2 * puse[snpsubset], rep(1, nsnpsub))
-      par.genon0[is.na(par.genon0)] <- 0     # equivalent to using 2p for missing genos
-      par2.genon0 <- par2.genon0 - rep.int(2 * puse[snpsubset], rep(1, nsnpsub))
-      par2.genon0[is.na(par2.genon0)] <- 0     # equivalent to using 2p for missing genos
-#      relcheck <- tcrossprod(matrix(offs.genon0,nrow=1),matrix(par.genon0,nrow=1)) / 
-#                  sum((2*puse[snpsubset]*(1-puse[snpsubset]))[offs.usegeno & par.usegeno])
-      bootrels <-     bootrels2 <- double(nboot)
-      for (b in seq(nboot)) {
-       bootsnps <- sample.int(nsnpsub,replace=TRUE)
-       bootrels[b] <- tcrossprod(matrix(offs.genon0[bootsnps],nrow=1),matrix(par.genon0[bootsnps],nrow=1)) / 
-                  sum((2*puse[snpsubset[bootsnps]]*(1-puse[snpsubset[bootsnps]]))[offs.usegeno[bootsnps] & par.usegeno[bootsnps]])
-       bootrels2[b] <- tcrossprod(matrix(offs.genon0[bootsnps],nrow=1),matrix(par2.genon0[bootsnps],nrow=1)) / 
-                  sum((2*puse[snpsubset[bootsnps]]*(1-puse[snpsubset[bootsnps]]))[offs.usegeno[bootsnps] & par2.usegeno[bootsnps]])
+      } #bootpos
+     ### end of bootstrap section
+     tempAssign <- rep("Y",nrow(allgmatch))
+     if(length(bootpos) > 0) tempAssign[which(allgmatch[,paste0(partype,"Reliability")] < boota.thresh )] <- "B"
+     tempAssign[which(EMMrate > emm.thresh)] <- "E"
+     tempAssign[which(allgmatch[, paste0(partype, "rel")] < rel.thresh)] <- "N"
+      # for E assigns, check if the 2nd parent is possible.  
+     tempAssign[which(allgmatch[, paste0(partype, "rel2nd")] >= rel.thresh & EMMrate2 < emm.thresh & tempAssign == "E")] <- "A"
+     allgmatch[, paste0(partype, "Assign")] <- tempAssign
+     png(paste0("Best", partype, "Matches.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+      plot(allgmatch[, paste0("mmrate", partype)] ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
+          ylab = "Raw mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8)
+      abline(v=rel.thresh, col="grey")
+      dev.off()
+     png(paste0("Best", partype, "MatchesE.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+      plot(EMMrate ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
+          ylab = "Excess mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8)
+      abline(v=rel.thresh, col="grey")
+      abline(h=emm.thresh, col="grey")
+      dev.off()
+     tempch <- assign.pch[match(tempAssign,assign.rank)]
+     png(paste0("ExpMM-", partype, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+      plot(allgmatch[, paste0("mmrate", partype)] ~ allgmatch[, paste0("exp.mmrate", partype)] , main = paste("Best", partype, "Matches"), xlab = "Expected mismatch rate", 
+          ylab = "Raw mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8, pch=tempch)
+      pch.used <- sort(match(unique(tempAssign),assign.rank))
+      legend("bottomright",title="Assign",cex=0.75,pch=assign.pch[pch.used],legend=assign.rank[pch.used])
+      abline(a=0,b=1,col="red")
+      abline(a=emm.thresh,b=1,col="grey")
+      dev.off()
+     mmpalette <- colorRampPalette(c("blue","red"))(50)
+     mmcol <- mmpalette[trunc(1+50*(EMMrate-min(EMMrate,na.rm=TRUE))/(diff(range(EMMrate,na.rm=TRUE))+1E-6))]
+     legend_image <- as.raster(matrix(rev(mmpalette), ncol = 1))
+     xyrange <- range(c(allgmatch[, paste0(partype, "rel")],allgmatch[, paste0(partype,"rel2nd")]))
+     png(paste0("Best2", partype, "Matches.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+      plot(allgmatch[, paste0(partype,"rel2nd")] ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
+          ylab = "Relatedness to 2nd best",col=mmcol,xlim=xyrange,ylim=xyrange, cex=0.8)
+      abline(a=0,b=1)
+      abline(v=rel.thresh, col="grey")
+      abline(h=rel.thresh, col="grey")
+      rasterImage(legend_image, coordprop(0.05,xyrange), coordprop(0.7,xyrange), coordprop(0.1,xyrange), coordprop(0.9,xyrange))
+      text(x=coordprop(0.11,xyrange),y=coordprop(0.7,xyrange),signif(min(EMMrate,na.rm=TRUE),2),pos=4,cex=0.8)
+      text(x=coordprop(0.11,xyrange),y=coordprop(0.9,xyrange),signif(max(EMMrate,na.rm=TRUE),2),pos=4,cex=0.8)
+      text(x=coordprop(0,xyrange),y=coordprop(0.95,xyrange),"Excess MM rate best",pos=4,cex=0.8)
+      dev.off()
+     noffspringpar <- data.frame(table(allgmatch[, paste0("Best", partype, "Match")]))
+     colnames(noffspringpar)[2] <- paste0(partype, "Freq")
+     groupsinfo <<- merge(groupsinfo, noffspringpar, by.x = "IndivID", by.y = "Var1", all = TRUE)
+     groupsinfo[is.na(groupsinfo[, paste0(partype, "Freq")]), paste0(partype, "Freq")] <<- 0
+     uo <- match(allgmatch$seqID,seqID[indsubset])
+     allgmatch$Inb <- diag(Guse)[uo] - 1
+     Parposped <- match(allgmatch[,paste0("Best", partype, "Match")],pedinfo$IndivID)
+     Parposg <- match(pedinfo$seqID[Parposped],seqID[indsubset])
+     allgmatch[,paste0(partype,"Inb")] <- diag(Guse)[Parposg] - 1
+     if(developer) {
+      Exprel <- 0.5 + allgmatch$Inb+allgmatch[,paste0(partype,"Inb")]/2   # par-offspr rel from theory
+      reldevn <- allgmatch[,paste0(partype,"rel")] - Exprel
+      uY <- which(tempAssign == "Y")
+      if(length(uY) > 0) {
+       lmrel <- lm(allgmatch[uY,paste0(partype,"rel")] ~ allgmatch$Inb[uY] + allgmatch[uY,paste0(partype,"Inb")] )
+       print(summary(lmrel))
        }
-      allgmatch[bootpos[bcase],paste0(partype,"sd")] <- sd(bootrels) 
-      allgmatch[bootpos[bcase],paste0(partype,"Reliability")] <- 100*sum(bootrels > bootrels2) /nboot
+      png(paste0("Best", partype, "MatchesDE.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+       plot(EMMrate ~ reldevn, main = paste("Best", partype, "Matches"), xlab = "Relatedness Deviation", 
+           ylab = "Excess mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8)
+       abline(v=rel.thresh-0.5, col="grey")
+       abline(h=emm.thresh, col="grey")
+       dev.off()
+      png(paste0("Best", partype, "MatchesExprel.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+       plot(allgmatch[, paste0(partype, "rel")] ~ Exprel,pch=tempch, main = paste("Best", partype, "Matches"),
+          xlab="Expected relatedness using estimated Inbreeding", ylab="Estimated relatedness")
+       abline(a=0,b=1,col="red")
+       abline(h=0.5,col="red",lty=2)
+       dev.off()
+
       }
-     } #bootpos
-    ### end of bootstrap section
-    tempAssign <- rep("Y",nrow(allgmatch))
-    if(length(bootpos) > 0) tempAssign[which(allgmatch[,paste0(partype,"Reliability")] < boota.thresh )] <- "B"
-    tempAssign[which(EMMrate > emm.thresh)] <- "E"
-    tempAssign[which(allgmatch[, paste0(partype, "rel")] < rel.thresh)] <- "N"
-     # for E assigns, check if the 2nd parent is possible.  
-    tempAssign[which(allgmatch[, paste0(partype, "rel2nd")] >= rel.thresh & EMMrate2 < emm.thresh & tempAssign == "E")] <- "A"
-    allgmatch[, paste0(partype, "Assign")] <- tempAssign
-    png(paste0("Best", partype, "Matches.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
-     plot(allgmatch[, paste0("mmrate", partype)] ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
-         ylab = "Raw mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8)
-     abline(v=rel.thresh, col="grey")
-     dev.off()
-    png(paste0("Best", partype, "MatchesE.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
-     plot(EMMrate ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
-         ylab = "Excess mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8)
-     abline(v=rel.thresh, col="grey")
-     abline(h=emm.thresh, col="grey")
-     dev.off()
-    tempch <- assign.pch[match(tempAssign,assign.rank)]
-    png(paste0("ExpMM-", partype, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
-     plot(allgmatch[, paste0("mmrate", partype)] ~ allgmatch[, paste0("exp.mmrate", partype)] , main = paste("Best", partype, "Matches"), xlab = "Expected mismatch rate", 
-         ylab = "Raw mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8, pch=tempch)
-     pch.used <- sort(match(unique(tempAssign),assign.rank))
-     legend("bottomright",title="Assign",cex=0.75,pch=assign.pch[pch.used],legend=assign.rank[pch.used])
-     abline(a=0,b=1,col="red")
-     abline(a=emm.thresh,b=1,col="grey")
-     dev.off()
-    mmpalette <- colorRampPalette(c("blue","red"))(50)
-    mmcol <- mmpalette[trunc(1+50*(EMMrate-min(EMMrate,na.rm=TRUE))/(diff(range(EMMrate,na.rm=TRUE))+1E-6))]
-    legend_image <- as.raster(matrix(rev(mmpalette), ncol = 1))
-    xyrange <- range(c(allgmatch[, paste0(partype, "rel")],allgmatch[, paste0(partype,"rel2nd")]))
-    png(paste0("Best2", partype, "Matches.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
-     plot(allgmatch[, paste0(partype,"rel2nd")] ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
-         ylab = "Relatedness to 2nd best",col=mmcol,xlim=xyrange,ylim=xyrange, cex=0.8)
-     abline(a=0,b=1)
-     abline(v=rel.thresh, col="grey")
-     abline(h=rel.thresh, col="grey")
-     rasterImage(legend_image, coordprop(0.05,xyrange), coordprop(0.7,xyrange), coordprop(0.1,xyrange), coordprop(0.9,xyrange))
-     text(x=coordprop(0.11,xyrange),y=coordprop(0.7,xyrange),signif(min(EMMrate,na.rm=TRUE),2),pos=4,cex=0.8)
-     text(x=coordprop(0.11,xyrange),y=coordprop(0.9,xyrange),signif(max(EMMrate,na.rm=TRUE),2),pos=4,cex=0.8)
-     text(x=coordprop(0,xyrange),y=coordprop(0.95,xyrange),"Excess MM rate best",pos=4,cex=0.8)
-     dev.off()
+     }
     write.csv(allgmatch, paste0(partype, "Matches.csv"), row.names = FALSE)
-    noffspringpar <- data.frame(table(allgmatch[, paste0("Best", partype, "Match")]))
-    colnames(noffspringpar)[2] <- paste0(partype, "Freq")
-    groupsinfo <<- merge(groupsinfo, noffspringpar, by.x = "IndivID", by.y = "Var1", all = TRUE)
-    groupsinfo[is.na(groupsinfo[, paste0(partype, "Freq")]), paste0(partype, "Freq")] <<- 0
     allgmatch
   } else {
     NULL
   }
 }
+
+ssbbmm <- function(bbpar,uuse=uY) {
+ depth2K <<- depth2Kchoose (dmodel="bb", bbpar)
+ mmstatsbb <- mismatch.2par(BothMatches$IndivID,BothMatches$BestFatherMatch, BothMatches$BestMotherMatch)
+ mmssbb <- sum((mmstatsbb$mmrate-mmstatsbb$exp.mmrate)[uuse]^2)
+ cat("bb param = ",bbpar,"ss = ",mmssbb,"\n")
+ mmssbb
+ }
+
+ssmpmm <- function(mppar,uuse=uY) {
+ depth2K <<- depth2Kchoose (dmodel="modp", mppar)
+ mmstatsmp <- mismatch.2par(BothMatches$IndivID,BothMatches$BestFatherMatch, BothMatches$BestMotherMatch)
+ mmssmp <- sum((mmstatsmp$mmrate-mmstatsmp$exp.mmrate)[uuse]^2)
+ cat("mp param = ",mppar,"ss = ",mmssmp,"\n")
+ mmssmp
+ }
+
+addtagIDs <- function(sampinfo,indvar,tagvar,matchtype="both") {
+  matchtype <- tolower(matchtype)
+  if(matchtype=="both") pedresults <- BothMatches
+  if(matchtype=="father") pedresults <- FatherMatches
+  if(matchtype=="mother") pedresults <- MotherMatches
+  progpos <- match(pedresults$IndivID,sampinfo[,indvar])
+  pedresults$IndivTag <- sampinfo[progpos,tagvar]
+  if(matchtype=="both" | matchtype=="father") {
+    fpos <-  match(pedresults$BestFatherMatch,sampinfo[,indvar])
+    pedresults$FatherTag <- sampinfo[fpos,tagvar]
+    }
+  if(matchtype=="both" | matchtype=="mother") {
+    mpos <-  match(pedresults$BestMotherMatch,sampinfo[,indvar])
+    pedresults$MotherTag <- sampinfo[mpos,tagvar]
+  }
+  pedresults
+ }
+
+bestparPCA <- function(Gobj,sfx="",keypos=NULL) {
+ plotch <- assign.pch[match(BothMatches$BothAssign,assign.rank)]
+ uf <- match(seqID,BothMatches$seqID)
+ uo <- match(BothMatches$seqID,seqID)
+ nprog=length(uo)
+ pchuse <- plotch[uf]
+ pchuse[is.na(pchuse)] <- 16
+ png(paste0("PC-BestParents",sfx,".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+  with(Gobj$PC,  plot(x[, 2] ~ x[, 1], cex = 1, col = fcolo, pch=pchuse, xlab = "Principal component 1", ylab = "Principal component 2") )
+  ParentLines <- data.frame(x=rep(NA,3*nprog),y=rep(NA,3*nprog))
+  ParentLines[seq(1,(3*nprog-2),3),] <- GHW$PC$x[uo,1:2]
+  ParentLines[seq(2,(3*nprog-1),3),] <- GHW$PC$x[match(pedinfo$seqID[match(BothMatches$BestFatherMatch,pedinfo$IndivID)],seqID),1:2]
+  lines(ParentLines,col="blue")
+  ParentLines[seq(2,(3*nprog-1),3),] <- GHW$PC$x[match(pedinfo$seqID[match(BothMatches$BestMotherMatch,pedinfo$IndivID)],seqID),1:2]
+  lines(ParentLines,col="deeppink")
+  pch.used <- sort(match(unique(BothMatches$BothAssign),assign.rank))
+  if(!is.null(keypos)) legend(keypos,title="Assign",cex=0.75,pch=assign.pch[pch.used],legend=assign.rank[pch.used])
+  dev.off()
+ invisible(NULL)
+ }
 
 if (OK4ped & exists("pedfile") & exists("GCheck")) {
   pedinfo <- read.csv(pedfile, stringsAsFactors = FALSE, colClasses=c(FatherGroup="character", MotherGroup="character"))
@@ -301,6 +443,9 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
   if ("MotherID" %in% colnames(pedinfo)) 
     pedinfo <- parmatch("Mother", eval(parse(text = GCheck)))
   if ("FatherID" %in% colnames(pedinfo) & "MotherID" %in% colnames(pedinfo)) {
+    Par2mm <- mismatch.2par(pedinfo$IndivID,pedinfo$FatherID,pedinfo$MotherID)
+    pedinfo$FandMEMM <- with(Par2mm,mmrate-exp.mmrate)
+    pedinfo$FandMmatch <- with(pedinfo,FatherMatch & MotherMatch & FandMEMM < emm.thresh2)
     if (is.character(pedinfo$IndivID)) {
       umiss <- which(pedinfo$FatherID == "")
       if (length(umiss) > 0) 
@@ -447,7 +592,7 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
        pairs(EMMrates, main="Excess Mismatch Rates", labels=c("Father2,\nMother2","Father1,\nMother2","Father2,\nMother1","Father1,\nMother1"),
                   upper.panel=panel.yeqx,lower.panel=NULL,col.points=fcolo[uo],pch=plotch)
        dev.off()
-      print( table(BothMatches$BothAssign) )
+      print( addmargins(table(BothMatches$BothAssign)) )
       }
      }
   }
