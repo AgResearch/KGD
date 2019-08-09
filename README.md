@@ -8,3 +8,7 @@ This project was supported by the Ministry of Business, Innovation and Employmen
 Please cite
 
 Dodds KG, et al. Construction of relatedness matrices using genotyping-by-sequencing data. BMC Genomics 2015 16:1047. https://doi.org/10.1186/s12864-015-2252-3
+
+and for parentage assignment
+
+Dodds, K G, McEwan, J C, Brauning, R, Van Stijn, T C, Rowe, S J, McEwan, K M and Clarke, S M (2019) Exclusion and genomic relatedness methods for assignment of parentage using genotyping-by-sequencing data. G3: Genes, Genomes, Genetics (in press). doi: 10.1534/g3.119.400501.
