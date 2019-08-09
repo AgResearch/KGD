@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.8.4"
+KGDver <- "0.8.5"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -251,6 +251,7 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
    nsnps <<- length(SNP_Names)
    if(exists("p")) p <<- p[-snppos]
    if(exists("depth")) depth <<- depth[, -snppos]
+   if(exists("depth.orig")) depth.orig <<- depth.orig[, -snppos]
    if(exists("genon")) genon <<- genon[, -snppos]
    if(exists("chrom")) chrom <<- chrom[-snppos]
    if(exists("pos")) pos <<- pos[-snppos]
@@ -546,10 +547,12 @@ colourby <- function(colgroup, groupsort=FALSE,maxlight=1) {
  }
 
 changecol <- function(colobject,colposition,newcolour) {# provide new colours to colourby object
- if(length(colposition) != length(newcolour))  stop("Error: colposition and newcolour are different lengths") 
- oldcolour <- colobject$collist
- colobject$collist[colposition] <- newcolour
- colobject$sampcol <-  colobject$collist[match(colobject$sampcol,oldcolour)] 
+ if(length(colposition)>0) {
+  if(length(colposition) != length(newcolour))  stop("Error: colposition and newcolour are different lengths") 
+  oldcolour <- colobject$collist
+  colobject$collist[colposition] <- newcolour
+  colobject$sampcol <-  colobject$collist[match(colobject$sampcol,oldcolour)] 
+  }
  colobject
  }
 
@@ -1163,6 +1166,35 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
   }
  invisible(NULL)
  }
+
+
+Gbend <- function(GRM,mineval=0.001, doplot=TRUE, sfx="", evalsum="free") {
+  #function to bend GRM to make it positive definite. Use at your own risk!
+  #evalsum="const" will rescale to original sum
+  GEig <- eigen(GRM) 
+  nevalset <- length(which(GEig$values < mineval))
+  cat(nevalset,"eigenvalues modified\n")
+  evalbent <- pmax(GEig$values,rep(mineval,nrow(GRM)))
+  if(evalsum=="const") evalbent <- evalbent*sum(GEig$values)/sum(evalbent)
+  GRMbent <- GEig$vectors %*% diag(evalbent) %*% t(GEig$vectors )
+  if(doplot) {
+  eigcol <- c("black","blue")
+   png(paste0("Eigenvalues",sfx,".png"),  width = 960, height = 960,  pointsize = 18)
+    plot(GEig$values,pch=16, cex=0.75, col=eigcol[(GEig$values<0)+1.0],xlab="Component", ylab="Eigenvalue",main=paste0("Eigenvalues",sfx))
+    abline(h=mineval,col="grey",lwd=2)
+    legend("topright",legend=c(">=0","<0"),col=eigcol,pch=16)
+    dev.off()
+   png(paste0("Self-Bending",sfx,".png"),  width = 960, height = 960,  pointsize = 18)
+    plot(diag(GRMbent) ~ diag(GRM), xlab="Using original GRM",ylab="Using bent GRM", main=paste0("Self-relatedness",sfx))
+    abline(a=0,b=1,col="red",lwd=3)
+    dev.off()
+   png(paste0("Rel-Bending",sfx,".png"),  width = 960, height = 960,  pointsize = 18)
+    plot(upper.vec (GRMbent) ~ upper.vec (GRM), xlab="Using original GRM",ylab="Using bent GRM", main=paste0("Relatedness",sfx))
+    abline(a=0,b=1,col="red",lwd=3)
+    dev.off()
+  }
+  GRMbent
+}
 
 ## function to use in writeVCF
 genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref, alt

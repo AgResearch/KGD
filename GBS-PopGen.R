@@ -41,7 +41,8 @@ Fst.GBS0 <- function(snpsubset, indsubset, populations) {
  snpsubset <- snpsubset[usnp]
  aX2 <-  rbind(round(genon[indsubset,snpsubset]/2),ceiling(genon[indsubset,snpsubset]/2))
  X2results <- apply(aX2,MARGIN=2,function(x,y) chisq.test(table(x,y))$statistic,y=rep(populations[indsubset],2))
- effnuma <- colSums(2*(1-depth2K(depthsub <- depth.orig[indsubset, snpsubset])))  # 2(1-K)
+# effnuma <- colSums(2*(1-depth2K(depthsub <- depth.orig[indsubset, snpsubset])))  # 2(1-K)
+ effnuma <- colSums(2*(1-depth2K(depth.orig[indsubset, snpsubset])))  # 2(1-K)
  Fst.results[usnp] <- npops * X2results / (effnuma * (npops - 1))
  Fst.results
  }
