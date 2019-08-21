@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.8.5"
+KGDver <- "0.8.6"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -146,12 +146,12 @@ readTD <- function(genofilefn0 = genofile, skipcols=0) {
     }
    if(!isgzfile) genosin <- fread(genofilefn0,sep=",",header=TRUE)
    if(skipcols > 0) genosin <- genosin[,-(1:skipcols)]
-   seqID <<- as.matrix(genosin[,1])[,1]  # (Allows any name for first col), also convert to vector from data.table
+   seqID <<- as.character(as.matrix(genosin[,1])[,1])  # (Allows any name for first col), also convert to vector from data.table
    nind <<- length(seqID)
    alleles <<- as.matrix(genosin[,-1,with=FALSE])
    } else {
    genosin <- scan(genofilefn0, skip = 1, sep = ",", what = c(list(seqID = ""), rep(list(0), 2*nsnps))) 
-   seqID <<- genosin[[1]]
+   seqID <<- as.character(genosin[[1]])
    nind <<- length(seqID)
    alleles <<- matrix(0, nrow = nind, ncol = 2 * nsnps)
    for (isnp in seq(2*nsnps)) alleles[, isnp] <<- genosin[[isnp+1]] 
@@ -458,8 +458,8 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  missrate <- sum(as.numeric(depth == 0))/nrow(depth)/ncol(depth)
  cat("Proportion of missing genotypes: ", missrate, "Callrate:", 1-missrate,"\n")
 
- callrate <- 1 - rowSums(depth == 0)/nsnps  # sample callrate, after removing SNPs, samples 
- SNPcallrate <- 1 - colSums(depth == 0)/nind  
+ callrate <<- 1 - rowSums(depth == 0)/nsnps  # sample callrate, after removing SNPs, samples 
+ SNPcallrate <<- 1 - colSums(depth == 0)/nind  
  png("CallRate.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
   hist(callrate, 50, col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of sample call rates", xlab = "Call rate (proportion of SNPs scored)")
   dev.off()
@@ -613,25 +613,31 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
   selfrel <- mean(diag(thisG))
   meanrel <- mean(upper.vec(thisG))
   minrel <- min(upper.vec(thisG))
-  meandepth <- mean(sampdepth[Gindsubset][indsubset][thispos])
-  mindepth <- min(sampdepth[Gindsubset][indsubset][thispos])
+  thisdepth <- sampdepth[Gindsubset][indsubset][thispos]
+  meandepth <- mean(thisdepth)
+  mindepth <- min(thisdepth)
   meanCR <- mean( 1 - rowSums(depthsub[thispos,,drop=FALSE] == 0)/nsnps )
-  emmstats <- data.frame(mmrate=numeric(0),exp.mmrate=numeric(0))
-  for(ipos in thispos) for(jpos in setdiff(thispos,ipos)) {
-   emmstatstemp <- mismatch.ident(seqIDtemp[ipos],seqIDtemp[jpos],snpsubset=snpsubset,puse=puse)
-   emmstats <- rbind(emmstats,with(emmstatstemp,data.frame(mmrate,exp.mmrate)))
+  nresults <- length(thispos)
+  #emmstats <- data.frame(mmrate=numeric(0),exp.mmrate=numeric(0))
+  mmmat <- expmmmat <- matrix(NA,nrow=nresults,ncol=nresults)
+  for(ipos in 1:nresults) for (jpos in setdiff(1:nresults,ipos)) {
+   emmstatstemp <- mismatch.ident(seqIDtemp[thispos[ipos]],seqIDtemp[thispos[jpos]],snpsubset=snpsubset,puse=puse)  # do it both ways
+   mmmat[ipos,jpos] <-emmstatstemp$mmrate
+   expmmmat[ipos,jpos] <- emmstatstemp$exp.mmrate
    }
-  mmrate <- mean(emmstats$mmrate,na.rm=TRUE)
-  exp.mmrate <- mean(emmstats$exp.mmrate,na.rm=TRUE)
-  EMM <- mmrate-exp.mmrate
-  posCstats <- rbind(posCstats, data.frame(mergeID=thisID,nresults=length(thispos),selfrel=selfrel,meanrel=meanrel,minrel=minrel,
-                     meandepth=meandepth,mindepth=mindepth,meanCR=meanCR,mmrate=mmrate,exp.mmrate =exp.mmrate, EMM = EMM, stringsAsFactors=FALSE))
-  ulorel <- which(thisG < 1 & thisG - selfrel <= hirel.thresh - 1 & upper.tri(thisG), arr.ind = TRUE)
-  if (nrow(ulorel) > 0) print(data.frame(Indiv1 = seqIDtemp[thispos[ulorel[, 1]]], Indiv2 = seqIDtemp[thispos[ulorel[, 2]]], rel = thisG[ulorel]))
+  expmmmat <- (expmmmat+t(expmmmat))/2
+  mmrate <- mean(mmmat,na.rm=TRUE)
+  exp.mmrate <- mean(expmmmat,na.rm=TRUE)
+  IEMM <- mmrate-exp.mmrate
+  posCstats <- rbind(posCstats, data.frame(mergeID=thisID,nresults=nresults,selfrel=selfrel,meanrel=meanrel,minrel=minrel,
+                     meandepth=meandepth,mindepth=mindepth,meanCR=meanCR,mmrate=mmrate,exp.mmrate =exp.mmrate, IEMM = IEMM, stringsAsFactors=FALSE))
+  ulorel <- which( ((thisG < 1 & thisG - selfrel <= hirel.thresh - 1) | mmmat-expmmmat>iemm.thresh) & upper.tri(thisG), arr.ind = TRUE)
+  if (nrow(ulorel) > 0) print(data.frame(Indiv1 = seqIDtemp[thispos[ulorel[, 1]]], Indiv2 = seqIDtemp[thispos[ulorel[, 2]]], rel = thisG[ulorel],
+                        depth1 = thisdepth[ulorel[, 1]],depth2 = thisdepth[ulorel[, 2]], IEMM = (mmmat-expmmmat)[ulorel]))
   }
  sink()
  write.csv(posCstats,file=csvout,row.names=FALSE,quote=FALSE)
- if(nrow(posCstats) > 0) {
+ if(nrow(posCstats) > 1) {
   png(paste0("SelfRel",sfx,".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
    with(posCstats,plot(meanrel~selfrel,xlab="Mean within run",ylab="Mean between run",main="Self-relatedness"))
    abline(a=0,b=1,col="red",lwd=2)
@@ -643,7 +649,7 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
    abline(a=iemm.thresh,b=1,col="grey",lwd=2)
    dev.off()
   png(paste0("posC-EMM", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
-   with(posCstats,pairs(cbind(meanrel,selfrel,EMM)))
+   with(posCstats,pairs(cbind(meanrel,selfrel,IEMM)))
    dev.off()
   }
  posCstats
@@ -1117,8 +1123,25 @@ regpanel <- function(x,y,nvars=3, ...) {
   }
  }
 
+plotpanel <- function(x,y, ...) {
+  points(x,y,...)
+  abline(a=0,b=1,col="red",lwd=2)
+}
+
 GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotname = "", whichplot="both", doBA=FALSE, ...) {
  #whichplot can be "both", "diag" or "off"
+ regoutput <- function() {  # function to return regression results in a data frame
+  regresults <- data.frame(x=character(0),y=character(0),Intercept=numeric(0),InterceptSE=numeric(0),
+                            slope=numeric(0),slopeSE=numeric(0),n=integer(0),correlation=numeric(0))
+  for(iG in 1:(nG-1)) for(jG in (iG+1):nG) {
+    regn <- summary(lm(gcompare[,jG] ~ gcompare[,iG])) # reverse order to match plot
+    regresults <- rbind(regresults,data.frame(x=Gnames[iG],y=Gnames[jG],
+                        Intercept=regn$coefficients[1,1], InterceptSE=regn$coefficients[1,2],
+                        slope=regn$coefficients[2,1],slopeSE=regn$coefficients[2,2],n=sum(regn$df[1:2]),
+                        correlation= sign(regn$coefficients[2,1])*sqrt(regn$r.squared)) )
+   }
+   regresults
+  }
  if(doBA) doBA <- require(MethComp)
  nG <- length(Glist)
  if (length(IDlist) != nG) stop("ID list different length to G list")
@@ -1128,10 +1151,13 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
  if(whichplot %in% c("both","diag")) {
   gcompare <- diag(Glist[[1]])[match(allID,IDlist[[1]])]
   for(iG in 2:nG)  gcompare <- cbind(gcompare,diag(Glist[[iG]])[match(allID,IDlist[[iG]])])
+  cat("Diagonals\n")
+  print(regoutput())
   png(paste0("Gcompare-", plotname, "-diag.png"), width = 960, height = 960, pointsize = 18)
-   if (nG>2)    pairs(gcompare,labels=Gnames,upper.panel=regpanel,main="Diagonal comparisons", nvars=nG, ...) else {
+   if (nG>2)    pairs(gcompare,labels=Gnames,upper.panel=regpanel,lower.panel=plotpanel,main="Diagonal comparisons", nvars=nG, ...) else {
     plot(gcompare,xlab=Gnames[1],ylab=Gnames[2],main="Diagonal comparisons", ...)
-    regpanel(gcompare[,2],gcompare[,1],nvars=2)
+    abline(a=0,b=1,col="red",lwd=2)
+    if(!is.null(regpanel)) regpanel(gcompare[,2],gcompare[,1],nvars=2)
     }
    dev.off()
   if(doBA) {
@@ -1148,10 +1174,13 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
   gcompare <- upper.vec(Glist[[1]][match(allID,IDlist[[1]]),match(allID,IDlist[[1]])])
   ncompare <- length(gcompare)
   for(iG in 2:nG)  gcompare <- cbind(gcompare,upper.vec(Glist[[iG]][match(allID,IDlist[[iG]]),match(allID,IDlist[[iG]])]))
+  cat("Off-diagonals\n")
+  print(regoutput())
   png(paste0("Gcompare-", plotname, "-offdiag.png"), width = 960, height = 960, pointsize = 18)
-   if (nG>2) pairs(gcompare,labels=Gnames,upper.panel=regpanel,main="Off-diagonal comparisons", nvars=nG, ...) else {
+   if (nG>2) pairs(gcompare,labels=Gnames,upper.panel=regpanel,lower.panel=plotpanel,main="Off-diagonal comparisons", nvars=nG, ...) else {
     plot(gcompare,xlab=Gnames[1],ylab=Gnames[2],main="Off-diagonal comparisons", ...)
-    regpanel(gcompare[,2],gcompare[,1],nvars=2)
+    abline(a=0,b=1,col="red",lwd=2)
+    if(!is.null(regpanel)) regpanel(gcompare[,2],gcompare[,1],nvars=2)
     }
    dev.off()
   if(doBA) {
