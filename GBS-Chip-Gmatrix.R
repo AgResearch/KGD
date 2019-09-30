@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.8.6"
+KGDver <- "0.8.7"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -15,6 +15,8 @@ if (!exists("alleles.keep"))     alleles.keep     <- FALSE
 if (!exists("outlevel"))         outlevel         <- 9
 if (!exists("use.Rcpp"))         use.Rcpp         <- TRUE
 if (!exists("nThreads"))         nThreads         <- 4  # 0 means use all available
+if (!exists("negC"))             negC             <- ""   # empty string will bypass negC checks
+if (!exists("negCsettings"))     negCsettings     <- list()
 
 # function to locate Rcpp file (assume it is in the same directory as this file and this file was 'sourced')
 pathToCppFile = function() {
@@ -347,6 +349,18 @@ GBSsummary <- function() {
  havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
+  if (nchar(negC) > 0) { # check and report negative controls
+   uneg <- do.call(grep,c(list(negC,seqID),negCsettings))
+   if(length(uneg) > 0 ) {
+    negCstats <- data.frame(seqID=seqID[uneg], callrate= 1 - rowSums(depth[uneg,] == 0)/nsnps, sampdepth=rowMeans(depth[uneg,]), stringsAsFactors = FALSE)
+    write.csv(negCstats, "negCStats.csv", row.names = FALSE)
+    if(length(uneg)>0) cat(length(uneg),"Negative controls removed\n  mean call rate = ",mean(negCstats$callrate), 
+                       "\n  max  call rate = ",max(negCstats$callrate),
+                       "\n  mean depth = ",mean(negCstats$sampdepth),
+                       "\n  max  depth = ",max(negCstats$sampdepth), "\n")
+   samp.remove(uneg)
+    }
+   }
   if (have_rcpp) {
    sampdepth.max <- rcpp_rowMaximums(depth, nThreads)
   }
@@ -373,12 +387,6 @@ GBSsummary <- function() {
     cat("alleles not available, using genotype method for p\n")
     p <- calcp(pmethod="G")
     }
-# changed to use function version, delete following lines
-#   allelecounts <<- colSums(alleles)
-#   RAcounts <<- matrix(allelecounts, ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
-#   p <<- RAcounts[, 1]/rowSums(RAcounts)  # p for ref allele - based on # reads, not on inferred # alleles
-#   acountmin <- 1
-#   acountmax <- max(rowSums(RAcounts))
    }
   if(exists("genosin")) rm(genosin)
   } #end GBS-specific
@@ -530,7 +538,7 @@ if(!functions.only) {
 ################## functions
 upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
 #seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1] # might not get number of cols right
-seq2samp <- function(seqIDvec=seqID, splitby="_") sapply(strsplit(seqIDvec,split=splitby),"[",1)
+seq2samp <- function(seqIDvec=seqID, splitby="_", ...) sapply(strsplit(seqIDvec,split=splitby, ...),"[",1)
 
 colourby <- function(colgroup, groupsort=FALSE,maxlight=1) {
  #maxlight is maximum lightness between 0 and 1
@@ -790,6 +798,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   }
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
+  npc <- sign(npc) * min(abs(npc),nsnpsub,nindsub)
   if (sum(dim(depth) != dim(depth.orig)) >0 ) cat("Warning: depth and depth.orig are different dimensions\n")
   depthsub <- depth.orig[indsubset, snpsubset]
   if(min(depth) < 2) depth[depth < 2] <- 1.1        # in case got here without executing this
@@ -1001,8 +1010,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     PC <- svd(GGBS5[pcasamps,pcasamps] - matrix(colMeans(GGBS5[pcasamps,pcasamps]), nrow = length(pcasamps), ncol = length(pcasamps), byrow = TRUE), nu = npc)
     eval <- sign(PC$d) * PC$d^2/sum(PC$d^2)
     PC$x <- PC$u %*% diag(PC$d[1:npc],nrow=npc)  # nrow to get correct behaviour when npc=1
-    cat("minimum eigenvalue: ", min(eval), "\n")  #check for +ve def
-    cat("first",2*npc,"eigenvalues:",eval[1:(2*npc)],"\n")
+    cat("minimum eigenvalue: ", min(eval), "\n") 
+    neprint <- min(2*npc,length(eval))
+    cat("first",neprint,"eigenvalues:",eval[1:neprint],"\n")
     if(npc > 1) {
      if(withPlotly){
         temp_p <- plot_ly(y=PC$x[, 2],x=PC$x[, 1], type="scatter", mode="markers",
