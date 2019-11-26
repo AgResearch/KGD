@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.8.7"
+KGDver <- "0.8.8"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -536,7 +536,7 @@ if(!functions.only) {
 
 
 ################## functions
-upper.vec <- function(sqMatrix) as.vector(sqMatrix[upper.tri(sqMatrix)])
+upper.vec <- function(sqMatrix,diag=FALSE) as.vector(sqMatrix[upper.tri(sqMatrix,diag=diag)])
 #seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1] # might not get number of cols right
 seq2samp <- function(seqIDvec=seqID, splitby="_", ...) sapply(strsplit(seqIDvec,split=splitby, ...),"[",1)
 
@@ -743,7 +743,7 @@ mergeSamples2 <- function(mergeIDs, indsubset) {
 
 
 calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0, calclevel = 9, cocall.thresh = 0, mdsplot=FALSE,
-                  mindepth.idr = 0.1, withPlotly=FALSE, withHeatmaply=withPlotly, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL) {
+                  mindepth.idr = 0.1, withPlotly=FALSE, withHeatmaply=withPlotly, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL,samptype="diploid") {
   # example calls:
   #   Gfull <- calcG(npc=4) 
   #   GHWdgm.05 <- calcG(which(HWdis > -0.05),'HWdgm.05') # recalculate using Hardy-Weinberg disequilibrium cut-off at -0.05
@@ -752,6 +752,13 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   if (missing(snpsubset))   snpsubset <- 1:nsnps
   if (missing(indsubset))   indsubset <- 1:nind
   if (missing(puse))        puse <- p
+  Gpool <- NULL
+  samptype <- tolower(samptype)
+  if (!samptype %in% c("diploid","pooled")) samptype <- "diploid"
+  if (samptype=="pooled") if (!exists("alleles")) {
+    cat("Allele matrix does not exist. Using diploid samptype\n")
+    samptype <- "diploid"
+    }
   ## Some checks if using plotly
   if(withPlotly){
     if(!require(plotly))
@@ -807,6 +814,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   cat("# individuals: ", nindsub, "\n")
   genon0 <- genon[indsubset, snpsubset]
   usegeno <- !is.na(genon[indsubset, snpsubset])
+  if(samptype=="pooled") raf <- 2 * alleles[indsubset, seq(1, 2 * nsnps - 1, 2)][,snpsubset] / depthsub  # ref allele freq x 2 (keep on 0-2 scale)
   if (depth.min > 1 | depth.max < Inf) {
     genon0[depth[indsubset, snpsubset] < depth.min] <- NA
     genon0[depth[indsubset, snpsubset] > depth.max] <- NA
@@ -814,6 +822,10 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     depthsub[depthsub > depth.max] <- 0
     usegeno[depth[indsubset, snpsubset] < depth.min] <- FALSE
     usegeno[depth[indsubset, snpsubset] > depth.max] <- FALSE
+    if(samptype=="pooled") {
+     raf[depthsub < depth.min] <- NA
+     raf[depthsub > depth.max] <- NA
+     }
     }
   cocall <- tcrossprod(usegeno)
   cat("Mean co-call rate (for sample pairs):", mean(upper.vec(cocall)/nsnpsub), "\n")
@@ -886,6 +898,14 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   GGBS4 <- GGBS4top/div0
   GGBS1 <- GGBS4top/2/sum(puse[snpsubset] * (1 - puse[snpsubset]))  
   rm(GGBS4top)
+
+  if (samptype == "pooled") {
+   raf <- raf - rep.int(2 * puse[snpsubset], rep(nindsub, nsnpsub))  # centred ref allele freq
+   raf[depthsub == 0] <- 0     # equivalent to using 2p for missing genos
+   Gpooltop <- tcrossprod(raf)
+   Gpool <- Gpooltop/div0
+   rm(Gpooltop)
+   }
   
   genon01 <- genon0
   P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = TRUE)
@@ -903,11 +923,19 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   div0 <- 2 * rowSums(P0 * P1)
   Kdepth <- depth2K(depth[indsubset, snpsubset])
   GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*Kdepth))/(1 - 2*Kdepth))/div0
-  rm(Kdepth, div0, P0, P1)
+
+  if (samptype == "pooled") {
+   raf1 <- raf
+   raf1[depthsub < 2] <- 0
+   diag(Gpool) <- 1 + rowSums((raf1^2 - 2 * P0 * P1 * (1 + 2*Kdepth))/(1 - 2*Kdepth))/div0
+   rm(raf1)
+   cat("Mean self-relatedness pools (Gpool diagonal):", mean(diag(Gpool)), "\n")
+   }
+
+  rm(Kdepth, div0, P0, P1, genon01)
   GGBS5 <- GGBS4
   diag(GGBS5) <- GGBS5d
   cat("Mean self-relatedness (G5 diagonal):", mean(GGBS5d), "\n")
-  
   uhirel <- which(GGBS5 > hirel.thresh & upper.tri(GGBS5), arr.ind = TRUE)
   if (nrow(uhirel) > 0 & nsnpsub >= 999) 
     write.csv(data.frame(Indiv1 = seqID[indsubset][uhirel[, 1]], Indiv2 = seqID[indsubset][uhirel[, 2]], G5rel = GGBS5[uhirel], SelfRel1 = GGBS5d[uhirel[,1]], SelfRel2 = GGBS5d[uhirel[,2]] ), 
@@ -921,7 +949,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     }
    pcacolo <- fcolo[indsubset[pcasamps]]
    if (npc > 0) {
-     temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = TRUE))
+     if (samptype=="pooled") {
+      temp <- sqrt(Gpool[pcasamps,pcasamps] - min(Gpool[pcasamps,pcasamps], na.rm = TRUE))
+      } else {
+      temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = TRUE))
+      }
      if(withHeatmaply){
        if(length(table(pcacolo)) > 1) {
          temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=TRUE,
@@ -960,35 +992,43 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
        }
      }
    }
+  if(samptype=="pooled") selfrel <- diag(Gpool) else selfrel <- diag(GGBS5)
   if (calclevel %in% c(2,9)) {
     if(withPlotly){
-      temp_p <- plot_ly(y=diag(GGBS4), x=diag(GGBS5), hoverinfo="text", text=hover.info, mode="markers", type="scatter",
+      temp_p <- plot_ly(y=diag(GGBS4), x=selfrel, hoverinfo="text", text=hover.info, mode="markers", type="scatter",
                         width=480 + addpixel, height=480, marker=list(size=cex.pointsize*6),
                         color=plotly.group, symbol=plotly.group2) %>%
-        layout(title="Self-relatedness estimates",xaxis=list(title = "Using G5"), yaxis=list(title = "Using G4"))
+        layout(title="Self-relatedness estimates",xaxis=list(title = ifelse(samptype=="pooled","Using Gpool","Using G5")), yaxis=list(title = "Using G4"))
       htmlwidgets::saveWidget(temp_p, paste0("G", sfx, "-diag.html"))
     }
-    png(paste0("G", sfx, "-diag.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
-    plot(diag(GGBS4) ~ diag(GGBS5), col = fcolo[indsubset], main = "Self-relatedness estimates", xlab = "Using G5", ylab = "Using G4")
+    png(paste0("G", sfx, "-diag.png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+    if(samptype=="pooled") {
+     pairs(cbind(diag(GGBS4), diag(GGBS5), selfrel), col = fcolo[indsubset], main = "Self-relatedness estimates", labels = c("G4","G5","Gpool"))
+     } else {
+     plot(diag(GGBS4) ~ selfrel, col = fcolo[indsubset], main = "Self-relatedness estimates", 
+                        xlab = ifelse(samptype=="pooled","Using Gpool","Using G5"), ylab = "Using G4")
+     }
     dev.off()
    }
   if (!gform == "chip") {
+    ylabel <- "Self-relatedness estimate using G5"
+    if(samptype=="pooled") ylabel <- "Self-relatedness estimate using Gpool"
     if(withPlotly){
-       temp_p <- plot_ly(y=diag(GGBS5), x=sampdepthsub, hoverinfo="text", text=hover.info, mode="markers", type="scatter",
+       temp_p <- plot_ly(y=selfrel, x=sampdepthsub, hoverinfo="text", text=hover.info, mode="markers", type="scatter",
                          width=480 + addpixel, height=480, marker=list(size=cex.pointsize*6),
                          color=plotly.group, symbol=plotly.group2) %>%
-        layout(title="Self-relatedness estimate using G5",xaxis=list(title = "Sample depth (log scale)", zeroline=FALSE, type='log'),
-               yaxis=list(title = "Self-relatedness estimate using G5", zeroline=FALSE))
+        layout(title=ylabel,xaxis=list(title = "Sample depth (log scale)", zeroline=FALSE, type='log'),
+               yaxis=list(title = ylabel, zeroline=FALSE))
       htmlwidgets::saveWidget(temp_p, paste0("G", sfx, "diagdepth.html"))
     }
     png(paste0("G", sfx, "diagdepth.png"), width = 480, height = 480, pointsize = cex.pointsize * 12)
-    #plot(diag(GGBS5) ~ I(sampdepthsub + 1), col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth +1", log="x")
-    plot(diag(GGBS5) ~ sampdepthsub, col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth (log scale)", log="x")
-    dev.off()
+      plot(selfrel ~ sampdepthsub, col = fcolo[indsubset], ylab = ylabel, xlab = "Sample depth (log scale)", log="x")
+      #plot(diag(GGBS5) ~ I(sampdepthsub + 1), col = fcolo[indsubset], ylab = "Self-relatedness estimate using G5", xlab = "Sample depth +1", log="x")
+      dev.off()
     #Slippery slope
     uss <- which(sampdepthsub >= mindepth.idr)
     if(length(uss) > 0) {
-     rellm <- lm(diag(GGBS5)[uss] ~  log(sampdepthsub[uss]))
+     rellm <- lm(selfrel[uss] ~  log(sampdepthsub[uss]))
      slipslope <- coef(rellm)[2]
      pval <- anova(rellm)[1,"Pr(>F)"]
      cat("Self-Rel vs log(depth) regression = ", signif(slipslope,3)," p = ",signif(pval,3)," (min depth = ",mindepth.idr,")\n",sep="")
@@ -999,15 +1039,20 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    if (gform == "chip" | !samplesOK)
      plot(upper.vec(GGBS1) ~ upper.vec(GGBS5), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", xlab = "Using G5", ylab = "Using G1")
    if (!gform == "chip" & calclevel > 2 & samplesOK)  
-     pairs(cbind(upper.vec(GGBS1), upper.vec(GGBS3), upper.vec(GGBS5)), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", 
-           labels = paste0("Using G", c("1", "3", "5")))
+     if(samptype=="pooled") lastpair <- cbind(upper.vec(GGBS5),upper.vec(Gpool)) else lastpair <- upper.vec(GGBS5)
+     pairs(cbind(upper.vec(GGBS1), upper.vec(GGBS3), lastpair), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", 
+           labels = paste0("Using G", c("1", "3", "5",ifelse(samptype=="pooled","pool",""))))
    dev.off()
    }
   npc <- abs(npc)
   if (npc >= 1) {
-    ### PCA analysis on GGBS5
+    ### PCA analysis on GGBS5 or Gpooled
     pcasymbol <- 1; if(length(pcasamps) < 100) pcasymbol <- 16
-    PC <- svd(GGBS5[pcasamps,pcasamps] - matrix(colMeans(GGBS5[pcasamps,pcasamps]), nrow = length(pcasamps), ncol = length(pcasamps), byrow = TRUE), nu = npc)
+    if(samptype=="pooled") {
+     PC <- svd(Gpool[pcasamps,pcasamps] - matrix(colMeans(Gpool[pcasamps,pcasamps]), nrow = length(pcasamps), ncol = length(pcasamps), byrow = TRUE), nu = npc)
+     } else {
+     PC <- svd(GGBS5[pcasamps,pcasamps] - matrix(colMeans(GGBS5[pcasamps,pcasamps]), nrow = length(pcasamps), ncol = length(pcasamps), byrow = TRUE), nu = npc)
+     } 
     eval <- sign(PC$d) * PC$d^2/sum(PC$d^2)
     PC$x <- PC$u %*% diag(PC$d[1:npc],nrow=npc)  # nrow to get correct behaviour when npc=1
     cat("minimum eigenvalue: ", min(eval), "\n") 
@@ -1035,7 +1080,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
       dev.off()
       }
     if(mdsplot) {
-      mdsout <- cmdscale(dist(GGBS5))
+      if(samptype=="pooled") {
+       mdsout <- cmdscale(dist(Gpool))
+       } else {
+       mdsout <- cmdscale(dist(GGBS5))
+       } 
       if(withPlotly){
         temp_p <- plot_ly(x=mdsout[,1],y=mdsout[,2], type="scatter", mode="markers", marker=list(size=cex.pointsize*6),
                           width=640 + addpixel, height=640 + addpixel,
@@ -1049,23 +1098,27 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
         dev.off()
       }
      }
-    list(G1 = GGBS1, G4d = diag(GGBS4), G5 = GGBS5, samp.removed = samp.removed, PC = PC)  # add G3=GGBS3, if needed
+    list(G1 = GGBS1, G4d = diag(GGBS4), G5 = GGBS5, Gpool = Gpool, samp.removed = samp.removed, PC = PC)  # add G3=GGBS3, if needed
   } else {
-    list(G1 = GGBS1, G4d = diag(GGBS4), G5 = GGBS5, samp.removed = samp.removed)  # add G3=GGBS3, if needed
+    list(G1 = GGBS1, G4d = diag(GGBS4), G5 = GGBS5, Gpool = Gpool, samp.removed = samp.removed)  # add G3=GGBS3, if needed
   }
 }
 
 
 writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # IDuse, metadf is for only those samples in Guse
  Gname <- deparse(substitute(Guse))
+ samp.removed <- integer(0)
  if (is.list(Guse)) {
-  if(!"G5" %in% names(Guse)) stop("Guse is a list without a G5")
-  if("PC" %in% names(Guse)) PCtemp <- Guse$PC
+  if("PC" %in% names(Guse)) {PCtemp <- Guse$PC; nindout <- nrow(PCtemp$x)}
   if("samp.removed" %in% names(Guse)) samp.removed <- Guse$samp.removed
-  Guse <- Guse$G5
-  Gname <- "G5"
+  if(outtype != 6) { # ignore following if only PCs
+   if(!"G5" %in% names(Guse)) stop("Guse is a list without a G5")
+   Guse <- Guse$G5
+   Gname <- "G5"
+   nindout <- nrow(Guse)
+   }
   }     
- if (missing(indsubset))   indsubset <- 1:nrow(Guse)
+ if (missing(indsubset))   indsubset <- 1:nindout
  if (missing(outname))   outname <- "GBS-Gmatrix"
  IDname <- as.character(deparse(substitute(IDuse)))
  charpos <- regexpr("[",IDname,fixed=TRUE) ; if (charpos>0) IDname <- substr(IDname,1,charpos-1)
