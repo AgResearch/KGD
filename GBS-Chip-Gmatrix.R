@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.8.8"
+KGDver <- "0.8.8 update 1"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -17,6 +17,7 @@ if (!exists("use.Rcpp"))         use.Rcpp         <- TRUE
 if (!exists("nThreads"))         nThreads         <- 4  # 0 means use all available
 if (!exists("negC"))             negC             <- ""   # empty string will bypass negC checks
 if (!exists("negCsettings"))     negCsettings     <- list()
+if (!exists("QQprobpts"))        QQprobpts        <- c(0.5,0.8,0.9,0.95,0.99)
 
 # function to locate Rcpp file (assume it is in the same directory as this file and this file was 'sourced')
 pathToCppFile = function() {
@@ -316,6 +317,25 @@ finclass <- function(HWdiseq=HWdis, MAF=maf, colobj, classname=NULL, plotname="f
   dev.off()
  }
 
+x2starplots <- function () {
+ HWsigplot(ll=l10pstar,llname="-log10p X2*", finpalette=colorRampPalette(c("deepskyblue2","red"))(50))
+ yaxpts <- quantile(x2star,QQprobpts)
+ png("X2star-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
+  par(mar = c(5.1, 4.1, 4.1, 4.1))
+  qqplot(qchisq(ppoints(nsnps), df = 1), x2star, cex=0.75, main = parse(text = "Hardy-Weinberg ~~ X^2~~ '* Q-Q Plot'"), 
+         xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), ylab = "Sample Quantiles")
+  ytck <- axis(side=4, tick=FALSE, labels=FALSE)
+  axis(side=4, at=ytck, labels = signif(-log10(exp(1)) * pchisq(ytck, 1, lower.tail = FALSE, log.p = TRUE),3))
+  mtext(text= expression('-log'[10]*'p X'^2*'*'), side=4, line=3)
+  if(length(QQprobpts) > 0) {
+   for(ipt in 1:length(QQprobpts)) {
+    lines(x=c(0,xaxpts[ipt],xaxpts[ipt]),y=c(yaxpts[ipt],yaxpts[ipt],0), col="grey")
+    }
+   text(x=xaxpts/4,y=yaxpts,labels=QQprobpts, pos=3, col="grey")
+   }
+  dev.off()
+ }
+
 mafplot <- function(MAF=maf,plotname="MAF", barcol="grey", doplot=TRUE, ...) {
  if(doplot) png(paste0(plotname,".png"), pointsize = cex.pointsize * 12)
   histinfo <- hist(MAF, breaks = 50, xlab = "Minor Allele Frequency", col = barcol, plot= doplot, ...)
@@ -347,6 +367,7 @@ calcp <- function(indsubset, pmethod="A") {
 
 GBSsummary <- function() {
  havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
+ if(havedepth & exists("depth.orig")) depth <- depth.orig
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
   if (nchar(negC) > 0) { # check and report negative controls
@@ -469,11 +490,11 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  callrate <<- 1 - rowSums(depth == 0)/nsnps  # sample callrate, after removing SNPs, samples 
  SNPcallrate <<- 1 - colSums(depth == 0)/nind  
  png("CallRate.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-  hist(callrate, 50, col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of sample call rates", xlab = "Call rate (proportion of SNPs scored)")
+  hist(callrate, seq(0,1,0.02), col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of sample call rates", xlab = "Call rate (proportion of SNPs scored)")
   dev.off()
  png("SNPCallRate.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
   # suggested by Jaroslav Klapste (Scion) 
-  hist(SNPcallrate, 50, col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of SNP call rates", xlab = "Call rate (proportion of samples scored)")
+  hist(SNPcallrate, seq(0,1,0.02), col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of SNP call rates", xlab = "Call rate (proportion of samples scored)")
   dev.off()
  if (gform == "chip") write.csv(data.frame(seqID, callrate), "SampleStats.csv", row.names = FALSE)
  if (!gform == "chip") {
@@ -502,17 +523,22 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
         xlab = "Mean SNP depth (log scale)")
    dev.off()
   }
+ xaxpts <<- qchisq(QQprobpts,df=1)
  finplot()
- HWsigplot(ll=l10pstar,llname="-log10p X2*", finpalette=colorRampPalette(c("deepskyblue2","red"))(50))
- png("X2star-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-  qqplot(qchisq(ppoints(nsnps), df = 1), x2star, main = parse(text = "Hardy-Weinberg ~~ X^2~~ '* Q-Q Plot'"), 
-         xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), ylab = "Sample Quantiles")
-  dev.off()
+ x2starplots()
  if(outlevel > 9) HWsigplot(plotname="HWdisMAFsig-raw")
  if(outlevel > 4) {
+  yaxpts <- quantile(LRT,QQprobpts)
   png("LRT-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-   qqplot(qchisq(ppoints(nsnps), df = 1), LRT, main = "Hardy-Weinberg LRT Q-Q Plot", xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), 
-         ylab = "Sample Quantiles")
+   qqplot(qchisq(ppoints(nsnps), df = 1), LRT, cex=0.75, main = "Hardy-Weinberg LRT Q-Q Plot", 
+         xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), ylab = "Sample Quantiles")
+   if(length(QQprobpts) > 0) {
+    for(ipt in 1:length(QQprobpts)) {
+     lines(x=c(0,xaxpts[ipt],xaxpts[ipt]),y=c(yaxpts[ipt],yaxpts[ipt],0), col="grey")
+     }
+    text(x=xaxpts/4,y=yaxpts,labels=QQprobpts, pos=3, col="grey")
+    }
+
    dev.off()
   png("LRT-hist.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
    hist(LRT, breaks = 50, col = "grey", xlab = "Hardy Weinberg likelihood ratio test statistic")
