@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.8.8 update 1"
+KGDver <- "0.8.9"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -268,6 +268,44 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
   }
  }
 
+HWpops <- function(snpsubset, indsubset, populations=NULL, depthmat = depth.orig) {
+ if (missing(snpsubset))   snpsubset <- 1:nsnps
+ if (missing(indsubset))   indsubset <- 1:nind
+ if (is.null(populations)) populations <- rep("A",nind)
+ popnames <- unique(populations[indsubset])
+ npops <- length(popnames)
+ HWdis <- matrix(NA,nrow=npops,ncol=length(snpsubset)); rownames(HWdis) <- popnames  #initialise
+ l10LRT <- x2star <- l10pstar <- maf <- HWdis
+ for(ipop in 1:npops) {
+  thigroup <- popnames[ipop]
+  indgroup <- intersect(indsubset,which(populations==thigroup))
+  naa <- colSums(genon[indgroup,snpsubset] == 2, na.rm = TRUE)
+  nab <- colSums(genon[indgroup,snpsubset] == 1, na.rm = TRUE)
+  nbb <- colSums(genon[indgroup,snpsubset] == 0, na.rm = TRUE)
+  n1 <- 2 * naa + nab
+  n2 <- nab + 2 * nbb
+  n <- n1 + n2  #n alleles
+  p1 <- n1/n
+  p2 <- 1 - p1
+  HWdis[ipop,] <- naa/(naa + nab + nbb) - p1 * p1
+  x2 <- (naa + nab + nbb) * HWdis[ipop,]^2/(p1^2 * p2^2)
+  LRT <- 2 * (n * log(n) + naa * log(pmax(1, naa)) + nab * log(pmax(1, nab)) + nbb * log(pmax(1, nbb)) - (n/2) * log(n/2) - n1 * log(n1) - n2 * 
+               log(n2) - nab * log(2))  # n is # alleles = 2* n obs
+#  l10p <- -log10(exp(1)) * pchisq(x2, 1, lower.tail = FALSE, log.p = TRUE)
+  l10LRT[ipop,] <- -log10(exp(1)) * pchisq(LRT, 1, lower.tail = FALSE, log.p = TRUE)
+  Kdepth <- depth2K(depthmat[indgroup,snpsubset])
+  Kdepth[depthmat[indgroup,snpsubset]==0] <- NA
+  esnphetstar <- 2*p1*p2*(1-2*colMeans(Kdepth,na.rm=TRUE))
+  osnphetstar <- nab/(naa + nab + nbb)
+  x2star[ipop,] <- colSums(1-2*Kdepth,na.rm=TRUE)*(1-osnphetstar/esnphetstar)^2 # corrected Nov 2018
+  l10pstar[ipop,] <- -log10(exp(1)) * pchisq(x2star[ipop,], 1, lower.tail = FALSE, log.p = TRUE)
+  maf[ipop,] <- ifelse(p1 > 0.5, p2, p1)
+  }
+  outobj <-  list( HWdis=HWdis, l10LRT=l10LRT, x2star=x2star, l10pstar=l10pstar, maf=maf)
+  if(npops>1) outobj <- c(outobj, list(l10pstar.pop =  -log10(exp(1)) * pchisq(colSums(x2star,na.rm=TRUE), colSums(!is.na(x2star)), lower.tail = FALSE, log.p = TRUE) ))
+  outobj
+  }
+
 finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=palette.aquatic, finxlim=c(0,0.5), finylim=c(-0.25, 0.25)) {
  depthtrans <- function(x) round(20 * log(-log(1/(x + 0.9)) + 1.05))  # to compress colour scale at higher depths
  depthpoints <- c(0.5, 5, 50, 250)  # legend points
@@ -287,7 +325,7 @@ finplot <- function(HWdiseq=HWdis, MAF=maf,  plotname="finplot", finpalette=pale
  }
 
 HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig", finpalette=palette.aquatic, finxlim=c(0,0.5), finylim=c(-0.25, 0.25), 
-                      llname="-log10 LRT", sortord=ll) {
+                      llname=expression('-log'[10]*' LRT'), sortord=ll) {
  sigtrans <- function(x) round(sqrt(x) * 40/max(sqrt(ll),na.rm=TRUE)) + 1  # to compress colour scale at higher LRT
  sigpoints <- c(0.5, 2, 5, 20, 50, 200, 500)  # legend points
  sigpoints <- sigpoints[union(1:2,which(sigpoints < max(ll,na.rm=TRUE)))]
@@ -318,8 +356,8 @@ finclass <- function(HWdiseq=HWdis, MAF=maf, colobj, classname=NULL, plotname="f
  }
 
 x2starplots <- function () {
- HWsigplot(ll=l10pstar,llname="-log10p X2*", finpalette=colorRampPalette(c("deepskyblue2","red"))(50))
- yaxpts <- quantile(x2star,QQprobpts)
+ HWsigplot(ll=l10pstar,llname=expression('-log'[10]*'p X'^2*'*'), finpalette=colorRampPalette(c("deepskyblue2","red"))(50))
+ yaxpts <- quantile(x2star,QQprobpts, na.rm=TRUE)  # NA when max depth is 1
  png("X2star-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
   par(mar = c(5.1, 4.1, 4.1, 4.1))
   qqplot(qchisq(ppoints(nsnps), df = 1), x2star, cex=0.75, main = parse(text = "Hardy-Weinberg ~~ X^2~~ '* Q-Q Plot'"), 
@@ -334,6 +372,77 @@ x2starplots <- function () {
    text(x=xaxpts/4,y=yaxpts,labels=QQprobpts, pos=3, col="grey")
    }
   dev.off()
+ }
+
+
+HDplot <- function(plotname="HDplot", colourtype = "depth", finpalette=palette.aquatic, HDxlim=c(0,1), HDylim=c(-Inf, Inf), HDcol=NULL,
+          sortcol = "asc") {
+ # from Mckinney Mol Ecol Res 2017
+ # colourtype can be "depth", "HW" (use l10LRT), "HW*" (use l10pstar)
+ # sortcol can be "asc", "desc" or ""
+ if(!exists("alleles")) cat("Cannot produce HD plots without alleles object\n")
+ if(exists("alleles")) {
+  if(!colourtype %in% c("depth", "HW", "HW*")) colourtype <- "depth"
+  if(!sortcol %in% c("asc","desc")) sortcol <- ""
+  if(!exists("HD.saved.KGD")) {
+   HD.saved.KGD <<- TRUE
+   Het <<- colSums(genon == 1, na.rm=TRUE) / (nind * SNPcallrate)
+   SNPN <<- colSums(depth.orig * (genon ==1), na.rm=TRUE)
+   SNPNA <<- colSums(alleles[, seq(1, 2 * nsnps - 1, 2)] * (genon ==1), na.rm=TRUE)
+   storage.mode(SNPN) <- storage.mode(SNPNA) <- "integer"
+   }
+  SNPz <- (SNPN/2 - SNPNA)/sqrt(SNPN * 0.5 * 0.5)  # denom is SNPsd
+  if(colourtype == "depth") {
+   colourvar <- snpdepth
+   legendlab <- "SNP Depth"
+   colvtrans <- function(x) round(20 * log(-log(1/(x + 0.9)) + 1.05))  # to compress colour scale at higher depths
+   colvpoints <- c(0.5, 5, 50, 250)  # legend points
+   mincolvplot <- 0.1
+   maxcolvplot <- 256
+   }
+  if(colourtype=="HW") {colourvar <- l10LRT; legendlab <- expression('-log'[10]*' LRT')}
+  if(colourtype=="HW*") {colourvar <- l10pstar; legendlab <- expression('-log'[10]*'p X'^2*'*')}
+  if(grepl("^HW", colourtype)) {
+   mincolvplot <- 0
+   maxcolvplot <- max(colourvar,na.rm=TRUE)
+   colvtrans <- function(x) round(sqrt(x) * 40/max(sqrt(colourvar),na.rm=TRUE)) + 1  # to compress colour scale at higher LRT
+   colvpoints <- c(0.5, 2, 5, 20, 50, 200, 500)  # legend points
+   colvpoints <- colvpoints[union(1:2,which(colvpoints < maxcolvplot))]
+   if(length(colvpoints) > 5) colvpoints <- colvpoints[seq(1,length(colvpoints),2)]
+   }
+  maxtrans <- colvtrans(maxcolvplot)
+  mintrans <- colvtrans(mincolvplot)
+  transpoints <- colvtrans(colvpoints)
+
+  HDxlim[2] <- HDxlim[2] + 0.13  # make some room for legend
+  legend_image <- as.raster(matrix(rev(finpalette[1:maxtrans]), ncol = 1))
+  HDc <- HDcol
+  if(is.null(HDcol)) HDc <- finpalette[colvtrans(pmax(mincolvplot, pmin(colourvar, maxcolvplot)))]
+  uplot <- which(SNPN > 0)
+  if( HDylim[1] == -Inf) HDylim[1] <- min(SNPz[uplot])
+  if( HDylim[2] == Inf) HDylim[2] <- max(SNPz[uplot])
+  plotch <- rep(1,nsnps)
+  plotch[which(SNPz > HDylim[2])] <- 94   # ^
+  plotch[which(SNPz < HDylim[1])] <- 118  # v
+  plotord <- 1:nsnps
+  if(is.null(HDcol)) {
+   if(sortcol == "asc") plotord <- order(colourvar)
+   if(sortcol == "desc") plotord <- order(colourvar, decreasing = TRUE)
+   }
+  png(paste0(plotname,".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
+   if(whitedist(finpalette) < 25) par(bg="grey")
+   plot(pmax(pmin(SNPz,HDylim[2]),HDylim[1])[plotord][uplot] ~ Het[plotord][uplot], col = HDc[plotord][uplot], cex = 0.8,  pch = plotch[plotord][uplot],
+        xlab = "Proportion of heterozygotes (H)", ylab = "Read ratio deviation (D)", cex.lab = 1.5, xlim=HDxlim, ylim=HDylim)
+      # frame.plot = FALSE,
+   if(is.null(HDcol)) {
+    x0 <- 0.96  # lhs of key
+    rect((x0-.05)*HDxlim[2], 1.1*HDylim[1]+0.05*HDylim[2], (x0+.13)*HDxlim[2], 0.85*HDylim[1]+0.15*HDylim[2], col="white", border="grey", xpd=NA)
+    rasterImage(legend_image, x0*HDxlim[2], HDylim[1], (x0+0.04)*HDxlim[2], 0.9*HDylim[1]+0.1*HDylim[2])
+    text(x = (x0+0.07)*HDxlim[2], y = HDylim[1] + 0.1*(HDylim[2]-HDylim[1]) * (transpoints-mintrans)/(maxtrans-mintrans), labels = format(colvpoints), xpd=NA, cex=0.8)
+    text(x = (x0+0.03)*HDxlim[2], y =0.88*HDylim[1]+0.12*HDylim[2], labels = legendlab, cex = 1, xpd=NA)
+    }
+   dev.off()
+  }
  }
 
 mafplot <- function(MAF=maf,plotname="MAF", barcol="grey", doplot=TRUE, ...) {
@@ -370,6 +479,7 @@ GBSsummary <- function() {
  if(havedepth & exists("depth.orig")) depth <- depth.orig
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
+#  storage.mode(depth) <- "integer"
   if (nchar(negC) > 0) { # check and report negative controls
    uneg <- do.call(grep,c(list(negC,seqID),negCsettings))
    if(length(uneg) > 0 ) {
@@ -449,28 +559,9 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
   }
 
  # calc some overall snp stats
- naa <- colSums(genon == 2, na.rm = TRUE)
- nab <- colSums(genon == 1, na.rm = TRUE)
- nbb <- colSums(genon == 0, na.rm = TRUE)
- n1 <- 2 * naa + nab
- n2 <- nab + 2 * nbb
- n <- n1 + n2  #n alleles
- p1 <- n1/n
- p2 <- 1 - p1
- HWdis <<- naa/(naa + nab + nbb) - p1 * p1
- x2 <- (naa + nab + nbb) * HWdis^2/(p1^2 * p2^2)
- LRT <- 2 * (n * log(n) + naa * log(pmax(1, naa)) + nab * log(pmax(1, nab)) + nbb * log(pmax(1, nbb)) - (n/2) * log(n/2) - n1 * log(n1) - n2 * 
-              log(n2) - nab * log(2))  # n is # alleles = 2* n obs
- maf <<- ifelse(p1 > 0.5, p2, p1)
- l10p <- -log10(exp(1)) * pchisq(x2, 1, lower.tail = FALSE, log.p = TRUE)
- l10LRT <<- -log10(exp(1)) * pchisq(LRT, 1, lower.tail = FALSE, log.p = TRUE)
- Kdepth <- depth2K(depth)
- Kdepth[depth==0] <- NA
- esnphetstar <- 2*p1*p2*(1-2*colMeans(Kdepth,na.rm=TRUE))
- osnphetstar <- nab/(naa + nab + nbb)
-# x2star <<- colSums(1-Kdepth,na.rm=TRUE)*(1-osnphetstar/esnphetstar)^2 
- x2star <<- colSums(1-2*Kdepth,na.rm=TRUE)*(1-osnphetstar/esnphetstar)^2 # corrected Nov 2018
- l10pstar <<- -log10(exp(1)) * pchisq(x2star, 1, lower.tail = FALSE, log.p = TRUE)
+ HWstats <- HWpops(depthmat = depth)
+ HWdis <<- HWstats$HWdis[1,];  l10LRT <<- HWstats$l10LRT[1,]; x2star <<- HWstats$x2star[1,]; l10pstar <<- HWstats$l10pstar[1,]; maf <<- HWstats$maf[1,]
+ LRT <- qchisq(-log(10)*l10LRT, 1, lower.tail = FALSE, log.p = TRUE)
 
  sampdepth <<- rowMeans(depth)  # recalc after removing SNPs and samples
  #if(outlevel > 4) sampdepth.med <<- apply(depth, 1, median)
@@ -1142,8 +1233,10 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
    Guse <- Guse$G5
    Gname <- "G5"
    nindout <- nrow(Guse)
-   }
-  }     
+   } 
+  } else {  
+   nindout <- nrow(Guse)
+   }   
  if (missing(indsubset))   indsubset <- 1:nindout
  if (missing(outname))   outname <- "GBS-Gmatrix"
  IDname <- as.character(deparse(substitute(IDuse)))
