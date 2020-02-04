@@ -212,6 +212,98 @@ bestmatch <- function(ospos, parpos, Guse, partype, matchcriterion = "rel") {
   out.df
 }
 
+bestmatesmatch <- function(ospos, matespos, Guse, matchcriterion = "rel") {
+  #matespos has a column for each mate (male, female)
+  if(!matchcriterion == "EMM") matchcriterion <- "rel"
+  if(nrow(matespos) > 0 ) {
+   selfrel <- diag(Guse)
+   diag(Guse) <- -1     # prevent self-parenting
+   par1chk <- Guse[ospos, matespos[,1],drop=FALSE]
+   par2chk <- Guse[ospos, matespos[,2],drop=FALSE]
+   if(matchcriterion == "rel") {
+    maxpos <- apply(pmin(par1chk,par2chk), 1, which.max)  # find the best min parent rel (for each offspring)
+    parchktemp <- par1chk
+    parchktemp[cbind(1:nrow(parchktemp), maxpos)] <- -1  # only need to do this for one mate
+    maxpos.2 <- apply(pmin(parchktemp,par2chk), 1, which.max)
+    rm(parchktemp)
+    }
+   if(matchcriterion == "EMM") {
+    offspringID.bm <- pedinfo$IndivID[match(seqID[indsubset][ospos],pedinfo$seqID)]
+    parGroupID1.bm <- pedinfo$IndivID[match(seqID[indsubset][matespos[,1]],pedinfo$seqID)]
+    parGroupID2.bm <- pedinfo$IndivID[match(seqID[indsubset][matespos[,2]],pedinfo$seqID)]
+    # in a loop for now - is there a better way (similar to mismatch.par.comb ?)
+    maxpos <- maxpos.2 <- integer(length(ospos))
+    for(ipos in 1:length(ospos)) {
+     mm.bm <- mismatch.2par(rep(offspringID.bm[ipos],length(matespos)),parGroupID1.bm,parGroupID2.bm)   # check offspring against all possible mate pairs
+     EMMchk <- with(mm.bm,mmrate-exp.mmrate)
+     maxpos[ipos] <- which.min(EMMchk)
+     EMMchk[maxpos[ipos]] <- 1
+     maxpos.2[ipos] <- which.min(EMMchk)
+     }
+    }
+   diag(Guse) <- selfrel
+   maxrel <- cbind(par1chk[cbind(1:nrow(par1chk), maxpos)],  par2chk[cbind(1:nrow(par2chk), maxpos)],
+                   par1chk[cbind(1:nrow(par1chk), maxpos.2)],par2chk[cbind(1:nrow(par2chk), maxpos.2)]) #F1,M1, F2, M2
+   rel12 <- cbind(Guse[cbind(matespos[maxpos,1],matespos[maxpos.2,1])],Guse[cbind(matespos[maxpos,2],matespos[maxpos.2,2])]) #F1F2, M1M2
+   out.df <- data.frame(seqID[indsubset][ospos], seqID[indsubset][matespos[maxpos,1]], seqID[indsubset][matespos[maxpos,2]], 
+             seqID[indsubset][matespos[maxpos.2,1]], seqID[indsubset][matespos[maxpos.2,2]], 
+             maxrel, rel12, stringsAsFactors = FALSE)
+   } else {
+   out.df <- data.frame(matrix(character(0),ncol=5),matrix(numeric(0),ncol=6), stringsAsFactors = FALSE)
+   }
+  names(out.df) <- c("seqID", "BestFatherMatch", "BestMotherMatch","FatherMatch2nd","MotherMatch2nd",
+                     "Fatherrel","Motherrel","Fatherrel2nd","Motherrel2nd","Father12rel","Mother12rel")
+  out.df
+}
+
+parEplot <- function(partype,EMMvar,relvar,plotcol="black") {
+      png(paste0("Best", partype, "MatchesE.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+      plot(EMMvar ~ relvar, main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
+          ylab = "Excess mismatch rate",col=plotcol, cex=0.8)
+      abline(v=rel.thresh, col="grey")
+      abline(h=emm.thresh, col="grey")
+      dev.off()
+ }
+
+reldevplots <- function(partype,EMMvar,relvar,gmatch,Exprelvar,plotcol="black",plotch=1) { 
+      png(paste0("Best", partype, "MatchesDE.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+       plot(EMMvar ~ relvar, main = paste("Best", partype, "Matches"), xlab = "Relatedness Deviation", 
+           ylab = "Excess mismatch rate",col=plotcol, cex=0.8)
+       abline(v=rel.thresh-0.5, col="grey")
+       abline(h=emm.thresh, col="grey")
+       dev.off()
+      png(paste0("Best", partype, "MatchesExprel.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+       plot(gmatch[, paste0(partype, "rel")] ~ Exprelvar, pch=plotch, main = paste("Best", partype, "Matches"),
+          xlab="Expected relatedness using estimated Inbreeding", ylab="Estimated relatedness")
+       abline(a=0,b=1,col="red")
+       abline(h=0.5,col="red",lty=2)
+       dev.off()
+ }
+
+trioplots <- function() {
+      uo <- match(BothMatches$seqID,seqID)
+      plotch <- assign.pch[match(BothMatches$BothAssign,assign.rank)]
+      plotcol <- rep("mediumblue",length(uo))
+      plotcol[which(sampdepth[uo] < 1 )] <- "skyblue2"
+      plotcol[which(sampdepth[uo] < 0.5 ) ] <- "grey75"
+      png("ParRel-Inb.png", width = 960, height = 960, pointsize = cex.pointsize *  21)
+       plot(BothMatches$relF1M1 ~ BothMatches$Inb,pch=plotch,col=plotcol,sub="0.5 <= mean depth < 1",col.sub="skyblue2",
+            xlab="Estimated Inbreeding",ylab="Estimated (best match) parent relatedness", cex.sub=0.9)
+       abline(a=0, b=2, col="red")
+       lines(x=c(min(BothMatches$Inb), (minr4inb-inb.thresh)/2,max(BothMatches$Inb)),y=c(minr4inb,minr4inb,2*max(BothMatches$Inb)+inb.thresh),col="grey")
+       title(sub="X: unassigned parent(s)",adj=0,cex.sub=0.9)
+       title(sub="mean depth < 0.5",col.sub="grey75",adj=0.95,cex.sub=0.9)
+       dev.off()
+      png(paste0("ExpMM-Both.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+       plot(mmrateF1M1 ~ exp.mmrateF1M1, data=BothMatches, main = paste("Best Parent Matches"), xlab = "Expected mismatch rate", 
+           ylab = "Raw mismatch rate",col=fcolo[uo], pch=plotch, cex=0.8)
+       abline(a=0,b=1,col="red")
+       abline(a=emm.thresh2,b=1,col="grey")
+       pch.used <- sort(match(unique(BothMatches$BothAssign),assign.rank))
+       legend("bottomright",title="Assign",cex=0.75,pch=assign.pch[pch.used],legend=assign.rank[pch.used])
+       dev.off()
+ }
+
 groupmatch <- function(Guse, partype) {
   rel.thresh <-  ifelse(partype == "Father", rel.threshF,rel.threshM)
   groupIDs <- unique(pedinfo[, paste0(partype, "Group")])
@@ -306,12 +398,7 @@ groupmatch <- function(Guse, partype) {
           ylab = "Raw mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8)
       abline(v=rel.thresh, col="grey")
       dev.off()
-     png(paste0("Best", partype, "MatchesE.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
-      plot(EMMrate ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
-          ylab = "Excess mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8)
-      abline(v=rel.thresh, col="grey")
-      abline(h=emm.thresh, col="grey")
-      dev.off()
+     parEplot(partype,EMMrate,allgmatch[, paste0(partype, "rel")],plotcol=fcolo[match(allgmatch$seqID,seqID)])
      tempch <- assign.pch[match(tempAssign,assign.rank)]
      png(paste0("ExpMM-", partype, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
       plot(allgmatch[, paste0("mmrate", partype)] ~ allgmatch[, paste0("exp.mmrate", partype)] , main = paste("Best", partype, "Matches"), xlab = "Expected mismatch rate", 
@@ -353,22 +440,94 @@ groupmatch <- function(Guse, partype) {
        lmrel <- lm(allgmatch[uY,paste0(partype,"rel")] ~ allgmatch$Inb[uY] + allgmatch[uY,paste0(partype,"Inb")] )
        print(summary(lmrel))
        }
-      png(paste0("Best", partype, "MatchesDE.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
-       plot(EMMrate ~ reldevn, main = paste("Best", partype, "Matches"), xlab = "Relatedness Deviation", 
-           ylab = "Excess mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8)
-       abline(v=rel.thresh-0.5, col="grey")
-       abline(h=emm.thresh, col="grey")
-       dev.off()
-      png(paste0("Best", partype, "MatchesExprel.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
-       plot(allgmatch[, paste0(partype, "rel")] ~ Exprel,pch=tempch, main = paste("Best", partype, "Matches"),
-          xlab="Expected relatedness using estimated Inbreeding", ylab="Estimated relatedness")
-       abline(a=0,b=1,col="red")
-       abline(h=0.5,col="red",lty=2)
-       dev.off()
-
+      reldevplots(partype,EMMrate,reldevn,gmatch=allgmatch,Exprelvar=Exprel,plotcol=fcolo[match(allgmatch$seqID,seqID)],plotch=tempch) 
       }
      }
     write.csv(allgmatch, paste0(partype, "Matches.csv"), row.names = FALSE)
+    allgmatch
+  } else {
+    NULL
+  }
+}
+
+matesmatch <- function(Guse) {
+  groupIDs <- na.omit(unique(pedinfo$MatesGroup))
+  groupIDs <- groupIDs[!groupIDs == ""]
+  ngroups <- length(groupIDs)
+  if (ngroups > 0) {
+    for (g in 1:ngroups) {
+      group <- groupIDs[g]
+      offspringID <- pedinfo$IndivID[which(pedinfo$MatesGroup == group)]
+      GroupID <- matesinfo[which(matesinfo$MatesGroup == group),c("MaleID","FemaleID")]
+      offspringseqID <- with(pedinfo, seqID[match(offspringID, IndivID)])
+      GroupseqID <- with(pedinfo, cbind(seqID[match(GroupID[,1], IndivID)],seqID[match(GroupID[,2], IndivID)]))
+      offspringpos <- match(offspringseqID, seqID[indsubset])
+      matespos <- cbind(match(GroupseqID[,1], seqID[indsubset]),match(GroupseqID[,2], seqID[indsubset]))
+      gmatch <- bestmatesmatch(offspringpos, matespos, Guse, matchcriterion = matchmethod)
+      if (g == 1) allgmatch <- gmatch else allgmatch <- rbind(allgmatch, gmatch)
+      }
+    allgmatch$IndivID <- pedinfo$IndivID[match(allgmatch$seqID, pedinfo$seqID)]
+    ncolallg <- ncol(allgmatch)
+    allgmatch <- allgmatch[, c(ncolallg, 1:(ncolallg-1))]
+    if (nrow(allgmatch) > 0) {
+     allgmatch$BestFatherMatch <- pedinfo$IndivID[match(allgmatch$BestFatherMatch, pedinfo$seqID)]
+     allgmatch$BestMotherMatch <- pedinfo$IndivID[match(allgmatch$BestMotherMatch, pedinfo$seqID)]
+     allgmatch$FatherMatch2nd <- pedinfo$IndivID[match(allgmatch$FatherMatch2nd, pedinfo$seqID)]
+     allgmatch$MotherMatch2nd <- pedinfo$IndivID[match(allgmatch$MotherMatch2nd, pedinfo$seqID)]
+     mmstats <- mismatch.par(allgmatch$IndivID, allgmatch$BestFatherMatch)
+     allgmatch$mmrateFather <- mmstats$mmrate
+     allgmatch$mmnumFather <- mmstats$ncompare
+     allgmatch$exp.mmrateFather <- mmstats$exp.mmrate
+     EMMrateFather <- allgmatch$mmrateFather  - allgmatch$exp.mmrateFather 
+     #not doing 2nds - its the combo that is important here (so no single parent A's either)
+     mmstats <- mismatch.par(allgmatch$IndivID, allgmatch$BestMotherMatch)
+     allgmatch$mmrateMother <- mmstats$mmrate
+     allgmatch$mmnumMother <- mmstats$ncompare
+     allgmatch$exp.mmrateMother <- mmstats$exp.mmrate
+     EMMrateMother <- allgmatch$mmrateMother  - allgmatch$exp.mmrateMother 
+      # closerel / boostrapping implemented for mating pairs analysis
+     tempAssign <- rep("Y",nrow(allgmatch))
+     tempAssign[which(pmax(EMMrateFather,EMMrateMother) > emm.thresh)] <- "E"
+     tempAssign[which(allgmatch$Fatherrel < rel.threshF)] <- "N"
+     tempAssign[which(allgmatch$Motherrel < rel.threshM)] <- "N"
+     allgmatch$BothAssign <- tempAssign 
+     tempch <- assign.pch[match(tempAssign,assign.rank)]
+      #havent done joint EMM yet ...
+     parEplot("Father",EMMrateFather,allgmatch$Fatherrel,plotcol=fcolo[match(allgmatch$seqID,seqID)])
+     parEplot("Mother",EMMrateMother,allgmatch$Motherrel,plotcol=fcolo[match(allgmatch$seqID,seqID)])
+     noffspringmates <- data.frame(table(with(allgmatch,paste(BestFatherMatch,BestMotherMatch,sep=":"))))
+     colnames(noffspringmates)[2] <- "MatesPairFreq"
+     matesinfo$pairID <<- with(matesinfo,paste(MaleID,FemaleID,sep=":"))
+     matesinfo <<- merge(matesinfo, noffspringmates, by.x = "pairID", by.y = "Var1", all = TRUE)
+     matesinfo$MatesPairFreq[is.na(matesinfo$MatesPairFreq)] <<- 0
+     matesinfo$pairID <<- NULL
+     uo <- match(allgmatch$seqID,seqID[indsubset])
+     allgmatch$Inb <- diag(Guse)[uo] - 1
+     Parposped <- match(allgmatch$BestFatherMatch,pedinfo$IndivID)
+     Parposg <- match(pedinfo$seqID[Parposped],seqID[indsubset])
+     allgmatch$FatherInb <- diag(Guse)[Parposg] - 1
+     Parposped <- match(allgmatch$BestMotherMatch,pedinfo$IndivID)
+     Parposg <- match(pedinfo$seqID[Parposped],seqID[indsubset])
+     allgmatch$MotherInb <- diag(Guse)[Parposg] - 1
+     if(developer) {
+      uY <- which(tempAssign == "Y")
+      Exprel <- 0.5 + allgmatch$Inb+allgmatch$FatherInb/2   # par-offspr rel from theory
+      reldevn <- allgmatch$Fatherrel - Exprel
+      if(length(uY) > 0) {
+       lmrel <- lm(allgmatch$Fatherrel[uY] ~ allgmatch$Inb[uY] + allgmatch$FatherInb[uY] )
+       print(summary(lmrel))
+       }
+      reldevplots("Father",EMMrateFather,reldevn,gmatch=allgmatch,Exprelvar=Exprel,plotcol=fcolo[match(allgmatch$seqID,seqID)],plotch=tempch) 
+      Exprel <- 0.5 + allgmatch$Inb+allgmatch$MotherInb/2   # par-offspr rel from theory
+      reldevn <- allgmatch$Motherrel - Exprel
+      if(length(uY) > 0) {
+       lmrel <- lm(allgmatch$Motherrel[uY] ~ allgmatch$Inb[uY] + allgmatch$MotherInb[uY] )
+       print(summary(lmrel))
+       }
+      reldevplots("Mother",EMMrateMother,reldevn,gmatch=allgmatch,Exprelvar=Exprel,plotcol=fcolo[match(allgmatch$seqID,seqID)],plotch=tempch) 
+      }
+     }
+    write.csv(allgmatch, "MatePairMatches.csv", row.names = FALSE)
     allgmatch
   } else {
     NULL
@@ -431,7 +590,7 @@ bestparPCA <- function(Gobj,sfx="",keypos=NULL) {
  }
 
 if (OK4ped & exists("pedfile") & exists("GCheck")) {
-  pedinfo <- read.csv(pedfile, stringsAsFactors = FALSE, colClasses=c(FatherGroup="character", MotherGroup="character"))
+  pedinfo <- suppressWarnings(read.csv(pedfile, stringsAsFactors = FALSE, colClasses=c(FatherGroup="character", MotherGroup="character")))
   pedinfo <- pedinfo[!is.na(pedinfo$seqID), ]
   pedinfo <- pedinfo[!is.na(match(pedinfo$seqID, seqID[indsubset])), ]
   dupids <- which(duplicated(pedinfo$IndivID))
@@ -487,10 +646,62 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
     cat("Mean relatedness between individuals in full-sib families with different parents", mean(eval(parse(text = GCheck))[opos,opos][udiff]), "\n")
   }
   write.csv(pedinfo, "PedVerify.csv", row.names = FALSE)
-  if (exists("groupsfile")) {
-    assign.rank <- c("Y","I","B","A","E","F","M","N")
-#    assign.pch <- c(16,2,6,1,15,13,13,4)
-    assign.pch <- c(16,2,6,1,15,70,77,4)
+   assign.rank <- c("Y","I","B","A","E","F","M","N")
+#   assign.pch <- c(16,2,6,1,15,13,13,4)
+   assign.pch <- c(16,2,6,1,15,70,77,4)
+  if (exists("matesfile")) {  ######### check for matching mating pair ###########
+    suppressWarnings(rm(groupsfile)) # dont use groups
+    matesinfo <- read.csv(matesfile, stringsAsFactors = FALSE, colClasses=(MatesGroup="character"))
+    matesinfo <- matesinfo[!duplicated(matesinfo),]  # remove row duplicates
+    matesinfo$Genotyped <- ifelse(is.na(match(pedinfo$seqID[match(matesinfo$MaleID,pedinfo$IndivID)],seqID))
+                                | is.na(match(pedinfo$seqID[match(matesinfo$FemaleID,pedinfo$IndivID)],seqID)),"N","Y")
+    if ("MatesGroup" %in% colnames(pedinfo)) 
+       BothMatches <- matesmatch(eval(parse(text = GCheck)))
+    if(nrow(BothMatches) > 0) {
+     BothMatches <- BothMatches[order(BothMatches$IndivID),]
+     mmstats <- mismatch.2par(BothMatches$IndivID, BothMatches$BestFatherMatch, BothMatches$BestMotherMatch)
+     BothMatches$mmrateF1M1 <- mmstats$mmrate
+     BothMatches$mmnumF1M1 <- mmstats$ncompare
+     BothMatches$exp.mmrateF1M1 <- mmstats$exp.mmrate
+     mmstats <- mismatch.2par(BothMatches$IndivID, BothMatches$FatherMatch2nd, BothMatches$MotherMatch2nd)
+     BothMatches$mmrateF2M2 <- mmstats$mmrate
+     BothMatches$mmnumF2M2 <- mmstats$ncompare
+     BothMatches$exp.mmrateF2M2 <- mmstats$exp.mmrate
+     uf <- match(pedinfo$seqID[match(BothMatches$BestFather,pedinfo$IndivID)],seqID[indsubset])
+     um <- match(pedinfo$seqID[match(BothMatches$BestMother,pedinfo$IndivID)],seqID[indsubset])
+     BothMatches$relF1M1 <- eval(parse(text = GCheck))[cbind(uf,um)]
+     uf <- match(pedinfo$seqID[match(BothMatches$FatherMatch2nd,pedinfo$IndivID)],seqID[indsubset])
+     um <- match(pedinfo$seqID[match(BothMatches$MotherMatch2nd,pedinfo$IndivID)],seqID[indsubset])
+     BothMatches$relF2M2 <- eval(parse(text = GCheck))[cbind(uf,um)]
+     uo <- match(BothMatches$seqID,seqID[indsubset])
+     BothMatches$Inb <- diag(eval(parse(text = GCheck)))[uo] - 1
+     EMMrates <- with(BothMatches,cbind(mmrateF2M2-exp.mmrateF2M2,mmrateF1M1-exp.mmrateF1M1))
+     EMMrate.min <- apply(EMMrates, MARGIN=1, min)
+     if (is.null(minr4inb)) minr4inb <- min(BothMatches$relF1M1) - 0.001
+     BothMatches$BothAssign[which(EMMrates[,2] > emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:4])] <- "E"
+     BothMatches$BothAssign[EMMrates[,2]-EMMrate.min > emmdiff.thresh2 & EMMrate.min < emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:5]] <- "A"
+     BothMatches$BothAssign[which(BothMatches$relF1M1 - 2 * BothMatches$Inb > inb.thresh & BothMatches$relF1M1 > minr4inb & BothMatches$BothAssign == "Y")] <- "I"
+     BothMatches$Alternate <- ""
+     Apos <- which(BothMatches$BothAssign %in% c("A","I"))
+     for (ipos in Apos) {
+      altOK <- TRUE
+      if (BothMatches$relF2M2[ipos] - 2 * BothMatches$Inb[ipos] > inb.thresh | EMMrate.min[ipos] > emm.thresh2) altOK <- FALSE
+      if(BothMatches$Fatherrel2nd[ipos] < rel.threshF) altOK <- FALSE
+      if(BothMatches$Motherrel2nd[ipos] < rel.threshM) altOK <- FALSE
+      if(altOK) BothMatches$Alternate[ipos] <- "F2M2"
+      }
+     write.csv(BothMatches,"MatePairMatches.csv", row.names = FALSE)
+     uo <- match(BothMatches$seqID,seqID)
+     trioplots()
+     plotch <- assign.pch[match(BothMatches$BothAssign,assign.rank)]
+     png("MMrateBothE.png", width = 640, height = 640, pointsize = cex.pointsize *  15)
+      plot(EMMrates[,1] ~ EMMrates[,2], main="Excess Mismatch Rates", ylab="Father2, Mother2",xlab="Father1, Mother1", col=fcolo[uo],pch=plotch)
+      abline(a = 0,b = 1, col="red")
+      dev.off()
+     print( addmargins(table(BothMatches$BothAssign)) )
+     }
+    }
+  if (exists("groupsfile")) {  ######### find fathers and mothers from possibles ###########
     groupsinfo <- read.csv(groupsfile, stringsAsFactors = FALSE, colClasses=(ParGroup="character"))
     groupsinfo <- groupsinfo[!duplicated(groupsinfo),]  # remove row duplicates
     groupsinfo$Genotyped <- ifelse(is.na(match(pedinfo$seqID[match(groupsinfo$IndivID,pedinfo$IndivID)],seqID)),"N","Y")
@@ -550,9 +761,9 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       Apos <- which(BothMatches$BothAssign %in% c("A","I"))
       for (ipos in Apos) {
 #       altpar = c("F2M2","F1M2","F2M1")[which(EMMrates[ipos,] == EMMrate.min[ipos])]
-       altpar = c("F2M2","F1M2","F2M1")[which.min(EMMrates[ipos,1:3])]
+       altpar <- c("F2M2","F1M2","F2M1")[which.min(EMMrates[ipos,1:3])]
        altOK <- TRUE
-       if (BothMatches[ipos,paste0("rel",altpar)] - BothMatches$Inb[ipos] > inb.thresh | EMMrate.min[ipos] > emm.thresh2) altOK <- FALSE
+       if (BothMatches[ipos,paste0("rel",altpar)] - 2 * BothMatches$Inb[ipos] > inb.thresh | EMMrate.min[ipos] > emm.thresh2) altOK <- FALSE
        if (grepl("F2",altpar)) {
         if(BothMatches[ipos, "Fatherrel2nd"] < rel.threshF | BothMatches[ipos, "mmrateFather2"] - BothMatches[ipos, "exp.mmrateFather2"] > emm.thresh ) altOK <- FALSE
         }
@@ -563,26 +774,8 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
        }
       write.csv(BothMatches,"BothMatches.csv", row.names = FALSE)
       uo <- match(BothMatches$seqID,seqID)
+      trioplots()
       plotch <- assign.pch[match(BothMatches$BothAssign,assign.rank)]
-      plotcol <- rep("mediumblue",length(uo))
-      plotcol[which(sampdepth[uo] < 1 )] <- "skyblue2"
-      plotcol[which(sampdepth[uo] < 0.5 ) ] <- "grey75"
-      png("ParRel-Inb.png", width = 960, height = 960, pointsize = cex.pointsize *  21)
-       plot(BothMatches$relF1M1 ~ BothMatches$Inb,pch=plotch,col=plotcol,sub="0.5 <= mean depth < 1",col.sub="skyblue2",
-            xlab="Estimated Inbreeding",ylab="Estimated (best match) parent relatedness")
-       abline(a=0, b=2, col="red")
-       lines(x=c(min(BothMatches$Inb), (minr4inb-inb.thresh)/2,max(BothMatches$Inb)),y=c(minr4inb,minr4inb,2*max(BothMatches$Inb)+inb.thresh),col="grey")
-       title(sub="X: unassigned parent(s)",adj=0)
-       title(sub="mean depth < 0.5",col.sub="grey75",adj=0.95)
-       dev.off()
-      png(paste0("ExpMM-Both.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
-       plot(mmrateF1M1 ~ exp.mmrateF1M1, data=BothMatches, main = paste("Best Parent Matches"), xlab = "Expected mismatch rate", 
-           ylab = "Raw mismatch rate",col=fcolo[uo], pch=plotch, cex=0.8)
-       abline(a=0,b=1,col="red")
-       abline(a=emm.thresh2,b=1,col="grey")
-       pch.used <- sort(match(unique(BothMatches$BothAssign),assign.rank))
-       legend("bottomright",title="Assign",cex=0.75,pch=assign.pch[pch.used],legend=assign.rank[pch.used])
-       dev.off()
       png("MMrateBoth.png", width = 640, height = 640, pointsize = cex.pointsize *  15)
        pairs(with(BothMatches,cbind(mmrateF2M2,mmrateF1M2,mmrateF2M1,mmrateF1M1)),upper.panel=panel.yeqx,lower.panel=NULL,
                   main="Raw Mismatch Rates", labels=c("Father2,\nMother2","Father1,\nMother2","Father2,\nMother1","Father1,\nMother1"),

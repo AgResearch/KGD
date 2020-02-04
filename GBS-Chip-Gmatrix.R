@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.8.9"
+KGDver <- "0.9.0"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -503,13 +503,16 @@ GBSsummary <- function() {
   u1 <- setdiff(which(sampdepth.max == 1 | sampdepth < sampdepth.thresh), u0)
   nmax0 <- length(u0)
   nmax1 <- length(u1)
+  seqID.removed <<- character(0)
   if (nmax0 > 0) {
    cat(nmax0, "samples with no calls (maximum depth = 0) removed:\n")
-   print(data.frame(indnum = u0, seqID = seqID[u0], sampdepth = sampdepth[u0]))
+   seqID.removed <<- seqID[u0]
+   print(data.frame(indnum = u0, seqID = seqID.removed, sampdepth = sampdepth[u0]))
    }
   if (nmax1 > 0) {
    cat(nmax1, "samples with maximum depth of 1 and/or mean depth <", sampdepth.thresh, "removed:\n")
    print(data.frame(indnum = u1, seqID = seqID[u1], sampdepth = sampdepth[u1]))
+   seqID.removed <<- c(seqID.removed, seqID[u1])
    }
   samp.remove(union(u0, u1))
   if (!exists("p") & exists("alleles")) { # not redone e.g. after merge
@@ -660,7 +663,7 @@ seq2samp <- function(seqIDvec=seqID, splitby="_", ...) sapply(strsplit(seqIDvec,
 colourby <- function(colgroup, groupsort=FALSE,maxlight=1) {
  #maxlight is maximum lightness between 0 and 1
  collabels <- unique(colgroup)
- if(groupsort) collabels <- sort(collabels)
+ if(groupsort) collabels <- sort(collabels,na.last=TRUE)
  ncol <- length(collabels)
  collist <- rainbow(ncol)
  lightness <- colSums( col2rgb(collist))/(3*255)
@@ -681,11 +684,23 @@ changecol <- function(colobject,colposition,newcolour) {# provide new colours to
  colobject
  }
 
-colkey <- function(colobj,sfx="",srt.lab=0) {  # plot a key for colours
- png(paste0("ColourKey",sfx,".png"),height=240)
+colkey <- function(colobj, sfx="", srt.lab=0, plotch=16, horiz = TRUE, freq=FALSE) {  # plot a key for colours
  nlevels <- length(colobj$collabels)
- plot( 1:nlevels, rep(1,nlevels),col=colobj$collist,pch=16, cex=1.5,ylab="", axes=FALSE,xlab="")
- text(labels=colobj$collabels,x=1:nlevels,y=0.8,srt=srt.lab)
+ longdim <- 480 + max(0,nlevels-20) * 10
+ labtext <- colobj$collabels
+ temptab <- table(colobj$sampcol)
+ if(freq) labtext <- paste(labtext, as.character(temptab[match(colobj$collist,names(temptab))]), sep="\t")
+ if(horiz) {
+  png(paste0("ColourKey",sfx,".png"),height=240, width = longdim)
+  par(mar=0.1+c(1, 1, 1, 1))
+  plot( 1:nlevels, rep(1,nlevels),col=colobj$collist,pch=plotch, cex=1.5,ylab="", axes=FALSE,xlab="", xpd=NA, ylim=c(0,1))
+  text(labels=labtext,x=(1:nlevels)+0.4,y=0.9,srt=srt.lab,pos=2)
+  } else {
+  png(paste0("ColourKey",sfx,".png"),width=240, height = longdim)
+  par(mar=0.1+c(1, 1, 1, 1))
+  plot( rep(0,nlevels),nlevels:1, col=colobj$collist,pch=plotch, cex=1.5,ylab="", axes=FALSE,xlab="", xpd=NA, xlim=c(0,1))
+  text(labels=labtext[nlevels:1],y=1:nlevels,x=0.1,pos=4,srt=srt.lab)
+  }
  dev.off()
  }
 
@@ -866,6 +881,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   #   GHWdgm.05 <- calcG(which(HWdis > -0.05),'HWdgm.05') # recalculate using Hardy-Weinberg disequilibrium cut-off at -0.05
   # sfx is text to add to GGBS5 as graph name, puse is allele freqs (all snps) to use
   # calclevel: 1: G5 only, 2: G5 + reports using G5, 3: all G, 9: all
+  cat("Calculating G matrix, analysis code:", sfx, "\n")
   if (missing(snpsubset))   snpsubset <- 1:nsnps
   if (missing(indsubset))   indsubset <- 1:nind
   if (missing(puse))        puse <- p
@@ -926,7 +942,18 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   if (sum(dim(depth) != dim(depth.orig)) >0 ) cat("Warning: depth and depth.orig are different dimensions\n")
   depthsub <- depth.orig[indsubset, snpsubset]
   if(min(depth) < 2) depth[depth < 2] <- 1.1        # in case got here without executing this
-  cat("Calculating G matrix, analysis code:", sfx, "\n")
+  # puse - determine whether global or indiv specifc
+  if(is.matrix(puse)) {  # allows matrix puse to be specified relative to all or subsetted data
+   cat("Using individual allele frequecies\n")
+   if(ncol(puse) == nsnps & nsnps > nsnpsub) puse <- puse[,snpsubset]
+   if(nrow(puse) == nind & nind > nindsub) puse <- puse[indsubset,]
+   } else {
+   cat("Using global allele frequecies\n")
+   if(length(puse) == nsnps & nsnps > nsnpsub) puse <- puse[snpsubset]
+   puse <- matrix(puse,byrow=TRUE,nrow=nindsub,ncol=nsnpsub)
+   }
+  if(!nrow(puse) == nindsub | !ncol(puse) == nsnpsub) stop("Dimensions of puse are incorrect.")
+  
   cat("# SNPs: ", nsnpsub, "\n")
   cat("# individuals: ", nindsub, "\n")
   genon0 <- genon[indsubset, snpsubset]
@@ -983,10 +1010,10 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   samplesOK <- exists("samples")
   if(samplesOK) if(nrow(samples) != nind) samplesOK <- FALSE
   if (!gform == "chip" & calclevel > 2 & outlevel > 7 & samplesOK) {
-   samples0 <- samples[indsubset, snpsubset] - rep.int(2 * puse[snpsubset], rep(nindsub, nsnpsub))
+   samples0 <- samples[indsubset, snpsubset] - 2 * puse
    samples0[is.na(genon0)] <- 0
    }
-  genon0 <- genon0 - rep.int(2 * puse[snpsubset], rep(nindsub, nsnpsub))
+  genon0 <- genon0 - 2 * puse
   genon0[is.na(genon0)] <- 0     # equivalent to using 2p for missing genos
   
   sampdepthsub <- rowMeans(depthsub)
@@ -996,11 +1023,16 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   # callratesub <- 1-rowSums(depthsub==0)/nsnpsub
   cat("Mean sample depth:", mean(sampdepthsub), "\n")
   
-  P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = TRUE)
-  P1 <- 1 - P0
-  P0[!usegeno] <- 0
-  P1[!usegeno] <- 0
-  div0 <- 2 * tcrossprod(P0, P1)
+#  P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = TRUE)
+#  P1 <- 1 - P0
+#  P0[!usegeno] <- 0
+#  P1[!usegeno] <- 0
+#  div0 <- 2 * tcrossprod(P0, P1)
+  Q0 <- puse * (1-puse)
+  Q01 <- rowSums(Q0)
+  Q0[!usegeno] <- 0
+  div0a <- 2 * tcrossprod(Q0, usegeno)
+  div0 <- sqrt(div0a) * t(sqrt(div0a))
   
   if (!gform == "chip" & calclevel > 2 & outlevel > 7  & samplesOK) {
     GGBS3top <- tcrossprod(samples0)
@@ -1013,19 +1045,20 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   
   GGBS4top <- tcrossprod(genon0)
   GGBS4 <- GGBS4top/div0
-  GGBS1 <- GGBS4top/2/sum(puse[snpsubset] * (1 - puse[snpsubset]))  
+  GGBS1 <- GGBS4top/crossprod(matrix(sqrt(2*Q01),nrow=1))
   rm(GGBS4top)
 
   if (samptype == "pooled") {
-   raf <- raf - rep.int(2 * puse[snpsubset], rep(nindsub, nsnpsub))  # centred ref allele freq
+   raf <- raf - 2 * puse  # centred ref allele freq
    raf[depthsub == 0] <- 0     # equivalent to using 2p for missing genos
    Gpooltop <- tcrossprod(raf)
    Gpool <- Gpooltop/div0
    rm(Gpooltop)
    }
   
+  # G5 diag adjustment
   genon01 <- genon0
-  P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = TRUE)
+  P0 <- puse
   P1 <- 1 - P0
   if (have_rcpp) {
     rcpp_assignP0P1Genon01(P0, P1, genon01, usegeno, depth[indsubset, snpsubset], nThreads)
@@ -1228,7 +1261,7 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
  if (is.list(Guse)) {
   if("PC" %in% names(Guse)) {PCtemp <- Guse$PC; nindout <- nrow(PCtemp$x)}
   if("samp.removed" %in% names(Guse)) samp.removed <- Guse$samp.removed
-  if(outtype != 6) { # ignore following if only PCs
+  if(any(outtype != 6)) { # ignore following if only PCs
    if(!"G5" %in% names(Guse)) stop("Guse is a list without a G5")
    Guse <- Guse$G5
    Gname <- "G5"
