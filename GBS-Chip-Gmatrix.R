@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.9.0"
+KGDver <- "0.9.1"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -141,7 +141,7 @@ readTD <- function(genofilefn0 = genofile, skipcols=0) {
   nsnps <<- (length(ghead) - 1)/2
   SNP_Names <<- read.table(text=ghead[-1][2*seq(nsnps)],sep="_",fill=TRUE,stringsAsFactors=FALSE)[,1]
   if (havedt) {
-   isgzfile <- grepl(".gz",genofilefn0) #gz unzipping will only work on linux systemss
+   isgzfile <- grepl(".gz",genofilefn0) #gz unzipping will only work on linux systems
    if ( packageVersion("data.table") < "1.12") {
     if(isgzfile) genosin <- fread(paste("gunzip -c",genofilefn0),sep=",",header=TRUE,showProgress=FALSE)
     } else {    
@@ -204,24 +204,46 @@ readChip <- function(genofilefn0 = genofile) {
 }
 
 readTassel <- function(genofilefn0 = genofile) {
-  #havedt <- require("data.table")
-  havedt <- FALSE
+  havedt <- require("data.table")
+  havedt <- FALSE       # problem with read.table(text= when > 2bill
   gsep <- switch(gform, uneak = "|", Tassel = ",")
-  ghead <- scan(genofile, what = "", nlines = 1, sep = "\t")
+  ghead <- scan(genofilefn0, what = "", nlines = 1, sep = "\t")
   nind <<- length(ghead) - switch(gform, uneak = 6, Tassel = 2)
-  seqID <<- switch(gform, uneak = ghead[2:(nind + 1)], Tassel = ghead[-(1:2)])
-  if (havedt) {
+  if (havedt & gform=="Tassel") {
    # placeholder for code to use data.table
-   isgzfile <- grepl(".gz",genofilefn0) #gz unzipping will only work on linux systemss
+   isgzfile <- grepl(".gz",genofilefn0) #gz unzipping will only work on linux systems
+   if ( packageVersion("data.table") < "1.12") {
+    if(isgzfile) genosin <- fread(paste("gunzip -c",genofilefn0),sep="\t",header=TRUE,showProgress=FALSE)
+    } else {    
+    if(isgzfile) genosin <- fread(cmd=paste("gunzip -c",genofilefn0),sep="\t",header=TRUE,showProgress=FALSE)
+    }
+   if(!isgzfile) genosin <- fread(genofilefn0,sep="\t",header=TRUE)
+   seqID <<- colnames(genosin)[-(1:2)]
+   nind <<- length(seqID)
+   chrom <<- genosin$CHROM
+   pos <<- genosin$POS
+   SNP_Names <<- paste(chrom,pos,sep="_")
+   nsnps <<- length(SNP_Names)
+  # alleles <<- as.matrix(reshape(data.frame(ids=rep(1:nind,nsnps),snps=rep(1:nsnps,each=nind),
+  #                               read.table(text= t(as.matrix(genosin[,-(1:2),with=FALSE])),sep=",")),
+  #                               direction="wide",idvar="ids",timevar="snps"))[,-1]
+   # dcast syntax dcast(data.table(ids ...), ids ~ snps,value.var = c("V1","V2" )) puts all V1 then all V2 so need to rearrange ...
+   tempalleles <- as.matrix(dcast(data.table(ids=rep(1:nind,nsnps),snps=rep(1:nsnps,each=nind),
+                                read.table(text= t(as.matrix(genosin[,-(1:2),with=FALSE])),sep=",")),
+                                ids ~ snps,value.var = c("V1","V2" ))[,-1])
+   alleles <- matrix(0,nrow=nind, ncol=2*nsnps)
+   alleles[,seq(1, 2 * nsnps - 1, 2)] <- tempalleles[,1:nsnps]
+   alleles[,seq(2, 2 * nsnps, 2)] <- tempalleles[,nsnps+(1:nsnps)]
    } else {
+   seqID <<- switch(gform, uneak = ghead[2:(nind + 1)], Tassel = ghead[-(1:2)])
    if (gform == "Tassel"){
-     genosin <- scan(genofile, skip = 1, sep = "\t", what = c(list(chrom = "", coord = 0), rep(list(""), nind)))
+     genosin <- scan(genofilefn0, skip = 1, sep = "\t", what = c(list(chrom = "", coord = 0), rep(list(""), nind)))
      chrom <<- genosin[[1]]
      pos <<- genosin[[2]]
-     SNP_Names <<- paste(genosin[[1]],genosin[[2]],sep="_")
-   }
+     SNP_Names <<- paste(chrom,pos,sep="_")
+     }
    if (gform == "uneak"){
-     genosin <- scan(genofile, skip = 1, sep = "\t", what = c(list(chrom = ""), rep(list(""), nind), list(hetc1 = 0, hetc2 = 0, acount1 = 0, acount2 = 0, p = 0)))
+     genosin <- scan(genofilefn0, skip = 1, sep = "\t", what = c(list(chrom = ""), rep(list(""), nind), list(hetc1 = 0, hetc2 = 0, acount1 = 0, acount2 = 0, p = 0)))
      SNP_Names <<- genosin[[1]]
    }
    nsnps <<- length(SNP_Names)
@@ -476,6 +498,7 @@ calcp <- function(indsubset, pmethod="A") {
 
 GBSsummary <- function() {
  havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
+ if(havedepth) cat("depth object already exists - reusing\n")
  if(havedepth & exists("depth.orig")) depth <- depth.orig
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
@@ -737,38 +760,45 @@ mismatch.ident <- function(seqid1, seqid2,snpsubset=1:nsnps, puse=p, mindepth.mm
 posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:nsnps,puse=p) {
  if (missing(Gindsubset)) Gindsubset <- 1:nind
  if (missing(indsubset)) indsubset <- 1:nrow(Guse)
+ havedepth <- exists("sampdepth")
  mergeIDs <- mergeIDs[indsubset]
  csvout <- paste0("posCreport", sfx, ".csv")
  cat("Positive Control Checks (also see", csvout, ")\n")
  seqIDtemp <- seqID[Gindsubset][indsubset]
  multiIDs <- unique(mergeIDs[which(duplicated(mergeIDs))])
- depthsub <- depth.orig[Gindsubset,,drop=FALSE]
+ if(havedepth) depthsub <- depth.orig[Gindsubset,,drop=FALSE]
  posCstats <- data.frame(mergeID=character(0),nresults=integer(0),selfrel=numeric(0),meanrel=numeric(0),minrel=numeric(0),
               meandepth=numeric(0),mindepth=numeric(0),meanCR=numeric(0),mmrate=numeric(0),exp.mmrate=numeric(0),EMM=numeric(0),stringsAsFactors=FALSE)
+ meandepth <- mindepth <- meanCR <- mmrate <- exp.mmrate <- IEMM <- NA
  sink(paste0("posCchecks",sfx,".txt"),split=TRUE)
  for (i in seq_along(multiIDs)) {
   thisID <- multiIDs[i]
   thispos <- which(mergeIDs==thisID)
+  nresults <- length(thispos)
+  thisdepth <- rep(NA,nresults)
   thisG <- Guse[indsubset,indsubset][thispos,thispos]
   selfrel <- mean(diag(thisG))
   meanrel <- mean(upper.vec(thisG))
   minrel <- min(upper.vec(thisG))
-  thisdepth <- sampdepth[Gindsubset][indsubset][thispos]
-  meandepth <- mean(thisdepth)
-  mindepth <- min(thisdepth)
-  meanCR <- mean( 1 - rowSums(depthsub[thispos,,drop=FALSE] == 0)/nsnps )
-  nresults <- length(thispos)
+  if(havedepth) {
+   thisdepth <- sampdepth[Gindsubset][indsubset][thispos]
+   meandepth <- mean(thisdepth)
+   mindepth <- min(thisdepth)
+   meanCR <- mean( 1 - rowSums(depthsub[thispos,,drop=FALSE] == 0)/nsnps )
+   }
   #emmstats <- data.frame(mmrate=numeric(0),exp.mmrate=numeric(0))
   mmmat <- expmmmat <- matrix(NA,nrow=nresults,ncol=nresults)
-  for(ipos in 1:nresults) for (jpos in setdiff(1:nresults,ipos)) {
-   emmstatstemp <- mismatch.ident(seqIDtemp[thispos[ipos]],seqIDtemp[thispos[jpos]],snpsubset=snpsubset,puse=puse)  # do it both ways
-   mmmat[ipos,jpos] <-emmstatstemp$mmrate
-   expmmmat[ipos,jpos] <- emmstatstemp$exp.mmrate
+  if(length(snpsubset) > 0) {
+   for(ipos in 1:nresults) for (jpos in setdiff(1:nresults,ipos)) {
+    emmstatstemp <- mismatch.ident(seqIDtemp[thispos[ipos]],seqIDtemp[thispos[jpos]],snpsubset=snpsubset,puse=puse)  # do it both ways
+    mmmat[ipos,jpos] <-emmstatstemp$mmrate
+    expmmmat[ipos,jpos] <- emmstatstemp$exp.mmrate
+    }
+   expmmmat <- (expmmmat+t(expmmmat))/2
+   mmrate <- mean(mmmat,na.rm=TRUE)
+   exp.mmrate <- mean(expmmmat,na.rm=TRUE)
+   IEMM <- mmrate-exp.mmrate
    }
-  expmmmat <- (expmmmat+t(expmmmat))/2
-  mmrate <- mean(mmmat,na.rm=TRUE)
-  exp.mmrate <- mean(expmmmat,na.rm=TRUE)
-  IEMM <- mmrate-exp.mmrate
   posCstats <- rbind(posCstats, data.frame(mergeID=thisID,nresults=nresults,selfrel=selfrel,meanrel=meanrel,minrel=minrel,
                      meandepth=meandepth,mindepth=mindepth,meanCR=meanCR,mmrate=mmrate,exp.mmrate =exp.mmrate, IEMM = IEMM, stringsAsFactors=FALSE))
   ulorel <- which( ((thisG < 1 & thisG - selfrel <= hirel.thresh - 1) | mmmat-expmmmat>iemm.thresh) & upper.tri(thisG), arr.ind = TRUE)
@@ -783,14 +813,16 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
    abline(a=0,b=1,col="red",lwd=2)
    lines(x=c(min(posCstats$selfrel), 2-hirel.thresh,max(max(posCstats$selfrel),2-hirel.thresh)),y=c(min(posCstats$selfrel)+hirel.thresh-1,1,1),col="grey",lwd=2)
    dev.off()
-  png(paste0("posC-MM", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
-   with(posCstats,plot(mmrate ~ exp.mmrate, xlab = "Expected mismatch rate", ylab = "Raw mismatch rate", cex=0.8))
-   abline(a=0,b=1,col="red",lwd=2)
-   abline(a=iemm.thresh,b=1,col="grey",lwd=2)
-   dev.off()
-  png(paste0("posC-EMM", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
-   with(posCstats,pairs(cbind(meanrel,selfrel,IEMM)))
-   dev.off()
+  if(length(snpsubset) > 0) {
+   png(paste0("posC-MM", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+    with(posCstats,plot(mmrate ~ exp.mmrate, xlab = "Expected mismatch rate", ylab = "Raw mismatch rate", cex=0.8))
+    abline(a=0,b=1,col="red",lwd=2)
+    abline(a=iemm.thresh,b=1,col="grey",lwd=2)
+    dev.off()
+   png(paste0("posC-EMM", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+    with(posCstats,pairs(cbind(meanrel,selfrel,IEMM)))
+    dev.off()
+   }
   }
  posCstats
  }
@@ -873,6 +905,78 @@ mergeSamples2 <- function(mergeIDs, indsubset) {
  list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
  }
 
+plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,negcol="grey", colpal = rev(hcl.colors(80,palette="YlGnBu"))[1:80]) {
+ if(vardesc=="") vardesc <- as.character(substitute(plotvar))
+ infonames <- names(plateinfo)
+ if(!"row"  %in% infonames | ! "column" %in% infonames) stop("row and/or column not in plateinfo")
+ if(nrow(plateinfo) != nind) stop (paste("Number of rows in plateinfo",nrow(plateinfo),"does not match # individuals",nind))
+ colpalgray <- rev(hcl.colors(80,palette="Grays"))[20:80]  # keep colours away from white,
+
+ markneg <- function(negcol=negcol) {
+  for (ineg in 1:nrow(neginfo)) {
+   thisrow <- which(rownames(zmat)==neginfo$row[ineg])
+   thiscol <- which(colnames(zmat)==neginfo$column[ineg])
+   if(!is.na(thisrow + thiscol)) { # only for rows and cols in the main plate plot.
+    lines(y=c(thisrow-3/2, thisrow-1/2)/(maxrow-1),x=c(thiscol-3/2,thiscol-1/2)/(maxcol-1),col=negcol)
+    lines(y=c(thisrow-1/2, thisrow-3/2)/(maxrow-1),x=c(thiscol-3/2,thiscol-1/2)/(maxcol-1),col=negcol)
+    }
+   }
+  }
+
+ addlegend <- function(barmax=0.7,plotvar,main="",colpalette=colpal, subid=NULL, subcol=NULL) {
+  ymax <- (maxrow-0.5)/(maxrow-1)
+  parplt <- par("plt")
+  paryratio <- (parplt[4]-parplt[3])/(parplt[2]-parplt[1])
+  paryratio <- paryratio* maxcol*(maxrow-1)/(maxrow*(maxcol-1))   # adjust for image x & y dimensions
+  rasterImage(as.raster(matrix(colpalette, ncol = 1)), barmax, ymax+ 0.01, barmax+0.05, ymax+ 0.41, angle=90, xpd=TRUE)
+  varstats <- summary(plotvar)
+  varmin <- varstats[1]; varmax = varstats[6]; varmean <- varstats[4]; varrange <- varmax-varmin
+  xlow <- barmax - 0.4*paryratio
+  xmean <- xlow +  0.4*paryratio* (varmean-varmin)/varrange
+  barheight <- 0.05/paryratio
+  bartop <- ymax + 0.01 + barheight
+  lines(x=c(barmax,barmax),y=c(bartop,ymax + 0.08),xpd=TRUE)
+  lines(x=c(xlow,xlow),y=c(bartop,ymax + 0.08),xpd=TRUE)
+  lines(x=c(xmean,xmean),y=c(bartop,ymax + 0.08),xpd=TRUE)
+  text(x = xlow+.02, y = ymax + 0.12, pos=2, labels = paste("Min =",signif(varmin,3)),xpd=TRUE, cex=0.8)
+  text(x = barmax-.05, y = ymax + 0.12, pos=4, labels = paste("Max =",signif(varmax,3)),xpd=TRUE, cex=0.8)
+  text(x = max(xlow+0.07,xmean), y = ymax + 0.12  , pos=NULL, labels = paste("Mean =",signif(varmean,3)), xpd=TRUE, cex=0.8)
+  text(x = 0, y = ymax + 0.03, pos=4, labels = main, cex = 1, xpd=TRUE)
+  if(!is.null(subid)) for(isub in seq_along(subid))  {
+   rect(xlow,  ymax + 0.01 + barheight*(isub-1)/4, barmax, ymax + 0.01 + barheight*isub/4, col = subcol[isub], border=NA, xpd=TRUE)
+   text(x=barmax,y=ymax + 0.01 + barheight*(isub-1)/4, labels=subid[isub],cex=0.5, adj=c(-0.2,0), xpd=TRUE)
+   if(isub==1) text(x=barmax,y=bartop, labels="Subplate",cex=0.7, adj=c(-0.2,0), xpd=TRUE)
+   }
+  }
+
+ zmat <- xtabs( plotvar ~ plateinfo$row + plateinfo$column)  # sums (if needed) plotvar
+ zmat[which(zmat==0)] <- NA
+ maxrow <- nrow(zmat); maxcol <- ncol(zmat)
+
+ png(paste0("Plate",sfx,".png"), pointsize = cex.pointsize *  12)
+  image(t(zmat), axes=FALSE,xlab="Plate column",ylab="Plate row",col=colpal,cex.lab=1.2)  
+  axis(1,at=(0:(ncol(zmat)-1))/(ncol(zmat)-1),labels=colnames(zmat),cex.axis=0.8)
+  axis(2,at=(0:(nrow(zmat)-1))/(nrow(zmat)-1),labels=rownames(zmat),cex.axis=0.8)
+  if(!missing(neginfo)) markneg(negcol=negcol)
+  addlegend(plotvar=plotvar, main=vardesc)
+  dev.off()
+
+ if("subplate" %in% infonames) {
+  subplateids <- sort(unique(plateinfo$subplate))
+  subplatecols <- rainbow(length(subplateids),alpha=0.2)
+  zmatc <- xtabs( match(plateinfo$subplate,subplateids) ~ plateinfo$row + plateinfo$column) 
+  zmatc[which(is.na(zmat))] <- NA
+  png(paste0("Subplate",sfx,".png"), pointsize = cex.pointsize *  12)
+   image(t(zmat), axes=FALSE,xlab="Plate column",ylab="Plate row",col=colpalgray,cex.lab=1.2)
+   image(t(zmatc), axes=FALSE,col=subplatecols, add=TRUE) 
+   axis(1,at=(0:(ncol(zmat)-1))/(ncol(zmat)-1),labels=colnames(zmat),cex.axis=0.8)
+   axis(2,at=(0:(nrow(zmat)-1))/(nrow(zmat)-1),labels=rownames(zmat),cex.axis=0.8)
+   if(!missing(neginfo)) markneg(negcol=negcol)
+   addlegend(plotvar=plotvar, main=vardesc, colpalette=colpalgray, subid=subplateids, subcol=subplatecols)
+   dev.off()
+  }
+ invisible(NULL)
+} #plateplot
 
 calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max = Inf, npc = 0, calclevel = 9, cocall.thresh = 0, mdsplot=FALSE,
                   mindepth.idr = 0.1, withPlotly=FALSE, withHeatmaply=withPlotly, plotly.group=NULL, plotly.group2=NULL, samp.info=NULL,samptype="diploid") {
@@ -1186,12 +1290,18 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    }
   if (calclevel %in% c(2,9)) {
    png(paste0("Gcompare", sfx, ".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
-   if (gform == "chip" | !samplesOK)
+   if(samplesOK & gform != "chip") midpair <- upper.vec(GGBS3) else midpair <- NULL
+   if(samptype=="pooled") lastpair <- cbind(upper.vec(GGBS5),upper.vec(Gpool)) else lastpair <- upper.vec(GGBS5)
+   Glabels <- "1"
+   if(samplesOK & gform != "chip") Glabels <- c(Glabels,"3")
+   Glabels <- c(Glabels,"5")
+   if(samptype=="pooled") Glabels <- c(Glabels,"pool")
+   if (length(Glabels) == 2)  # only GGBS1 and GGBS5 to compare
      plot(upper.vec(GGBS1) ~ upper.vec(GGBS5), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", xlab = "Using G5", ylab = "Using G1")
-   if (!gform == "chip" & calclevel > 2 & samplesOK)  
-     if(samptype=="pooled") lastpair <- cbind(upper.vec(GGBS5),upper.vec(Gpool)) else lastpair <- upper.vec(GGBS5)
-     pairs(cbind(upper.vec(GGBS1), upper.vec(GGBS3), lastpair), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", 
-           labels = paste0("Using G", c("1", "3", "5",ifelse(samptype=="pooled","pool",""))))
+   if (length(Glabels) > 2 & calclevel > 2) { 
+     pairs(cbind(upper.vec(GGBS1), midpair, lastpair), col = "#80808060", pch = 16, main = "Off-diagonal comparisons", 
+           labels = paste0("Using G", Glabels))
+     }
    dev.off()
    }
   npc <- abs(npc)
@@ -1208,6 +1318,13 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     cat("minimum eigenvalue: ", min(eval), "\n") 
     neprint <- min(2*npc,length(eval))
     cat("first",neprint,"eigenvalues:",eval[1:neprint],"\n")
+    #diagnostic plots using first PC
+    png(paste0("PC1vInb", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+      plot(I(selfrel-1) ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Inbreeding")
+      dev.off()
+    png(paste0("PC1vDepth", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+      plot(sampdepthsub ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Mean Sample Depth")
+      dev.off()  
     if(npc > 1) {
      if(withPlotly){
         temp_p <- plot_ly(y=PC$x[, 2],x=PC$x[, 1], type="scatter", mode="markers",
@@ -1275,7 +1392,8 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
  IDname <- as.character(deparse(substitute(IDuse)))
  charpos <- regexpr("[",IDname,fixed=TRUE) ; if (charpos>0) IDname <- substr(IDname,1,charpos-1)
  charpos <- regexpr("$",IDname,fixed=TRUE) ; if (charpos>0) IDname <- substr(IDname,charpos+1,nchar(IDname))
- if (missing(IDuse))  { IDuse <- seqID[indsubset]; IDname <- "seqID" }
+ if (missing(IDuse))  { IDuse <- seqID; IDname <- "seqID" }
+ IDuse <- IDuse[indsubset]
  if(1 %in% outtype) {
   savelist <- list(Guse=Guse,IDuse=IDuse)
   charpos <- regexpr("[",Gname,fixed=TRUE) ; if (charpos>0) Gname <- substr(Gname,1,charpos-1)
@@ -1595,14 +1713,14 @@ writeGBS <- function(indsubset,snpsubset,outname="HapMap.hmc.txt",outformat=gfor
 upperboundary <- function(x){ 20*pmax(rep(0,length(x)),x)^2+0.2} 
 lowerboundary <- function(x){ 0.1 + x} 
 
-genderassign <- function(ped.df, index_Y_SNPs, index_X_SNPs, sfx="", hetgamsex = "M", homgamsex = "F", hetchrom = "Y", homchrom = "X") {
+genderassign <- function(ped.df, index_Y_SNPs, index_X_SNPs, sfx="", hetgamsex = "M", homgamsex = "F", hetchrom = "Y", homchrom = "X", dojitter=FALSE) {
  #ped.df is a dataframe of individuals for gender prediction, as if read from a pedigree file
  #   optionally contains variables Sex (with values M, F or U for male, female, unknown)
  #              and Relationship (character, e.g. "progeny", "sire" or "dam")
  # uses upperboundary and lowerboundary vector functions. upperboundary can be nonlinear. 
  cat("Gender Prediction\n")
- cat(length(index_Y_SNPs), "Y chromosome SNPs\n")
- cat(length(index_X_SNPs), "X chromosome SNPs\n")
+ cat(length(index_Y_SNPs), hetchrom,"chromosome SNPs\n")
+ cat(length(index_X_SNPs), homchrom,"chromosome SNPs\n")
  genopos <- match(ped.df$seqID,seqID)
 
  #proporton of SNPs an individual has on the Y chromosome
@@ -1641,11 +1759,14 @@ genderassign <- function(ped.df, index_Y_SNPs, index_X_SNPs, sfx="", hetgamsex =
   }
  gendercol<- c("blue","red","grey","grey")[match(ped.df$Sex ,c("M","F","U", NA))]
  maxxupper <- optimise(function(x) abs(upperboundary(x)-1),lower=0,upper=maxx)$minimum
+ yval2plot <- maxy*proportion_SNPs_Y
+ if(dojitter) yval2plot <- jitter(yval2plot)
+ jtext <- ""; if(dojitter) jtext <- "(jittered)"
  png(file=paste0("GenderPlot",sfx,".png"), height=640, width=640, pointsize = cex.pointsize *  15)
-  plot(new_prop_X, maxy*proportion_SNPs_Y, xlab=paste0("Heterozygosity (",homchrom," chr)"), ylab=paste(hetchrom,"chr SNPs"), col=gendercol, 
+  plot(new_prop_X, yval2plot, xlab=paste0("Heterozygosity (",homchrom," chr)"), ylab=paste(hetchrom,"chr SNPs",jtext), col=gendercol, 
         pch=plotch, cex.axis=1.2, cex.lab=1.2, ylim=c(0,maxy), xlim=c(0,maxx))
   ucheck <-  which(ped.df$Sex != gender_prediction)
-  points(new_prop_X[ucheck], maxy*proportion_SNPs_Y[ucheck],col=gendercol[ucheck],pch=plotch[ucheck]) #highlight discrepancies
+  points(new_prop_X[ucheck], yval2plot[ucheck],col=gendercol[ucheck],pch=plotch[ucheck]) #highlight discrepancies
   edges <- par("usr"); #minx maxx miny maxy plotting area
 #  poly1 <- data.frame(x1 = c(edges[1],edges[2],edges[2],edges[1],edges[1]), 
 #                      y1 = c(lowerboundary(edges[1])*,maxy,lowerboundary(edges[2])*maxy,edges[3],edges[3],lowerboundary(edges[1])*maxy))
