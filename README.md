@@ -5,7 +5,7 @@ R code for the analysis of genotyping-by-sequencing (GBS) data, primarily to con
 
 The manual describing the use of the code is **KGDManual.pdf** in the top directory of this repository.
 
-This project was supported by the Ministry of Business, Innovation and Employment via its funding of the “Genomics for Production & Security in a Biological Economy” programme (Contract ID C10X1306). 
+This project was supported by the Ministry of Business, Innovation and Employment via its funding of the “Genomics for Production & Security in a Biological Economy” programme (Contract ID C10X1306). Additional outputs from that project can be found on its [ResearchGate page](https://www.researchgate.net/project/Genotyping-for-production-and-security-in-a-biological-economy-an-MBIE-project).
 
 Please cite
 
