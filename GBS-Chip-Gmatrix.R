@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.9.1"
+KGDver <- "0.9.2"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -683,16 +683,23 @@ upper.vec <- function(sqMatrix,diag=FALSE) as.vector(sqMatrix[upper.tri(sqMatrix
 #seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1] # might not get number of cols right
 seq2samp <- function(seqIDvec=seqID, splitby="_", ...) sapply(strsplit(seqIDvec,split=splitby, ...),"[",1)
 
-colourby <- function(colgroup, groupsort=FALSE,maxlight=1) {
+colourby <- function(colgroup, groupsort=FALSE,maxlight=1,hclpals=character(0)) {
  #maxlight is maximum lightness between 0 and 1
  collabels <- unique(colgroup)
  if(groupsort) collabels <- sort(collabels,na.last=TRUE)
  ncol <- length(collabels)
+ npals <- length(hclpals)
  collist <- rainbow(ncol)
+ if(ncol > 8) collist[seq(2,ncol,2)] <-  rgb((t(col2rgb(collist[seq(2,ncol,2)]))+matrix(127,ncol=3,nrow=floor(ncol/2)))/2,maxColorValue = 255)  # darken every 2nd one
+ if(npals > 0 & exists("hcl.colors")) {
+   for(ipal in 1:npals) {
+    addcols <- hcl.colors(ceiling(ncol/npals),pal=hclpals[ipal])
+    if(ipal==1) collist <- addcols else collist <- c(collist,addcols)
+    }
+   collist <- collist[1:ncol] # trim if needed
+   }
  lightness <- colSums( col2rgb(collist))/(3*255)
  collist <- rgb(t(col2rgb(collist) %*% diag(pmin(lightness,rep(maxlight,length(lightness))) / lightness)), maxColorValue = 255)
-# if(ncol > 8 ) collist[seq(2,ncol,2)] <-  rgb(t(col2rgb(collist[seq(2,ncol,2)]))/1.5,maxColorValue = 255)  # darken every 2nd one
- if(ncol > 8 ) collist[seq(2,ncol,2)] <-  rgb((t(col2rgb(collist[seq(2,ncol,2)]))+matrix(127,ncol=3,nrow=floor(ncol/2)))/2,maxColorValue = 255)  # darken every 2nd one
  sampcol <- collist[match(colgroup,collabels)]
  list(collabels=collabels,collist=collist,sampcol=sampcol)
  }
@@ -905,12 +912,13 @@ mergeSamples2 <- function(mergeIDs, indsubset) {
  list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
  }
 
-plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,negcol="grey", colpal = rev(hcl.colors(80,palette="YlGnBu"))[1:80]) {
+plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,negcol="grey", colpal = hcl.colors(80,palette="YlGnBu", rev=TRUE)) {
  if(vardesc=="") vardesc <- as.character(substitute(plotvar))
  infonames <- names(plateinfo)
  if(!"row"  %in% infonames | ! "column" %in% infonames) stop("row and/or column not in plateinfo")
  if(nrow(plateinfo) != nind) stop (paste("Number of rows in plateinfo",nrow(plateinfo),"does not match # individuals",nind))
- colpalgray <- rev(hcl.colors(80,palette="Grays"))[20:80]  # keep colours away from white,
+ if(missing(colpal) & !exists("hcl.colors")) colpal <- colorRampPalette(c("#FCFFDD","#BCE9C5","#18BDB0","#007EB3","#26185F"))(80)  # similar to YlGnBu
+ colpalgray <- rev(gray.colors(60, end=0.975))  # keep colours away from white,
 
  markneg <- function(negcol=negcol) {
   for (ineg in 1:nrow(neginfo)) {
@@ -1375,6 +1383,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
 writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # IDuse, metadf is for only those samples in Guse
  Gname <- deparse(substitute(Guse))
  samp.removed <- integer(0)
+ if(outtype==0) cat("Warning, no output will be produced \nSpecify outtype(s):\n 1 R datasets\n 2 G matrix\n 3 long G\n 4 inbreeding\n 5 t-SNE\n 5 PCA\n")
  if (is.list(Guse)) {
   if("PC" %in% names(Guse)) {PCtemp <- Guse$PC; nindout <- nrow(PCtemp$x)}
   if("samp.removed" %in% names(Guse)) samp.removed <- Guse$samp.removed
