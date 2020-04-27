@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.9.2"
+KGDver <- "0.9.2 Update5"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -506,7 +506,7 @@ GBSsummary <- function() {
   if (nchar(negC) > 0) { # check and report negative controls
    uneg <- do.call(grep,c(list(negC,seqID),negCsettings))
    if(length(uneg) > 0 ) {
-    negCstats <- data.frame(seqID=seqID[uneg], callrate= 1 - rowSums(depth[uneg,] == 0)/nsnps, sampdepth=rowMeans(depth[uneg,]), stringsAsFactors = FALSE)
+    negCstats <<- data.frame(seqID=seqID[uneg], callrate= 1 - rowSums(depth[uneg,] == 0)/nsnps, sampdepth=rowMeans(depth[uneg,]), stringsAsFactors = FALSE)
     write.csv(negCstats, "negCStats.csv", row.names = FALSE)
     if(length(uneg)>0) cat(length(uneg),"Negative controls removed\n  mean call rate = ",mean(negCstats$callrate), 
                        "\n  max  call rate = ",max(negCstats$callrate),
@@ -724,12 +724,12 @@ colkey <- function(colobj, sfx="", srt.lab=0, plotch=16, horiz = TRUE, freq=FALS
   png(paste0("ColourKey",sfx,".png"),height=240, width = longdim)
   par(mar=0.1+c(1, 1, 1, 1))
   plot( 1:nlevels, rep(1,nlevels),col=colobj$collist,pch=plotch, cex=1.5,ylab="", axes=FALSE,xlab="", xpd=NA, ylim=c(0,1))
-  text(labels=labtext,x=(1:nlevels)+0.4,y=0.9,srt=srt.lab,pos=2)
+  text(labels=labtext,x=(1:nlevels)+0.4,y=0.9,srt=srt.lab,pos=2,xpd=TRUE)
   } else {
   png(paste0("ColourKey",sfx,".png"),width=240, height = longdim)
   par(mar=0.1+c(1, 1, 1, 1))
   plot( rep(0,nlevels),nlevels:1, col=colobj$collist,pch=plotch, cex=1.5,ylab="", axes=FALSE,xlab="", xpd=NA, xlim=c(0,1))
-  text(labels=labtext[nlevels:1],y=1:nlevels,x=0.1,pos=4,srt=srt.lab)
+  text(labels=labtext[nlevels:1],y=1:nlevels,x=0.1,pos=4,srt=srt.lab,xpd=TRUE)
   }
  dev.off()
  }
@@ -921,21 +921,23 @@ plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,ne
  colpalgray <- rev(gray.colors(60, end=0.975))  # keep colours away from white,
 
  markneg <- function(negcol=negcol) {
-  for (ineg in 1:nrow(neginfo)) {
-   thisrow <- which(rownames(zmat)==neginfo$row[ineg])
-   thiscol <- which(colnames(zmat)==neginfo$column[ineg])
-   if(!is.na(thisrow + thiscol)) { # only for rows and cols in the main plate plot.
-    lines(y=c(thisrow-3/2, thisrow-1/2)/(maxrow-1),x=c(thiscol-3/2,thiscol-1/2)/(maxcol-1),col=negcol)
-    lines(y=c(thisrow-1/2, thisrow-3/2)/(maxrow-1),x=c(thiscol-3/2,thiscol-1/2)/(maxcol-1),col=negcol)
+  if(nrow(neginfo) > 0) {
+   for (ineg in 1:nrow(neginfo)) {
+    thisrow <- which(rownames(zmat)==neginfo$row[ineg])
+    thiscol <- which(colnames(zmat)==neginfo$column[ineg])
+    if(length(thisrow) == 1 & length(thiscol)==1) { # only for rows and cols in the main plate plot.
+     lines(y=c(thisrow-3/2, thisrow-1/2)/(maxrow-1),x=c(thiscol-3/2,thiscol-1/2)/(maxcol-1),col=negcol)
+     lines(y=c(thisrow-1/2, thisrow-3/2)/(maxrow-1),x=c(thiscol-3/2,thiscol-1/2)/(maxcol-1),col=negcol)
+     }
     }
    }
   }
 
  addlegend <- function(barmax=0.7,plotvar,main="",colpalette=colpal, subid=NULL, subcol=NULL) {
-  ymax <- (maxrow-0.5)/(maxrow-1)
+  ymax <- max(1,(maxrow-0.5)/(maxrow-1))  # 1 to cope with nrow=1
   parplt <- par("plt")
   paryratio <- (parplt[4]-parplt[3])/(parplt[2]-parplt[1])
-  paryratio <- paryratio* maxcol*(maxrow-1)/(maxrow*(maxcol-1))   # adjust for image x & y dimensions
+  paryratio <- paryratio* max(2,maxcol)*max(1,(maxrow-1))/(max(2,maxrow)*max(1,(maxcol-1)))   # adjust for image x & y dimensions
   rasterImage(as.raster(matrix(colpalette, ncol = 1)), barmax, ymax+ 0.01, barmax+0.05, ymax+ 0.41, angle=90, xpd=TRUE)
   varstats <- summary(plotvar)
   varmin <- varstats[1]; varmax = varstats[6]; varmean <- varstats[4]; varrange <- varmax-varmin
@@ -949,10 +951,11 @@ plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,ne
   text(x = xlow+.02, y = ymax + 0.12, pos=2, labels = paste("Min =",signif(varmin,3)),xpd=TRUE, cex=0.8)
   text(x = barmax-.05, y = ymax + 0.12, pos=4, labels = paste("Max =",signif(varmax,3)),xpd=TRUE, cex=0.8)
   text(x = max(xlow+0.07,xmean), y = ymax + 0.12  , pos=NULL, labels = paste("Mean =",signif(varmean,3)), xpd=TRUE, cex=0.8)
-  text(x = 0, y = ymax + 0.03, pos=4, labels = main, cex = 1, xpd=TRUE)
+  text(x = -0.5/(max(1.5,maxcol)-1), y = ymax + 0.03, pos=4, labels = main, cex = 1, xpd=TRUE)  # place from left margin
+  nsub <- length(subid)
   if(!is.null(subid)) for(isub in seq_along(subid))  {
-   rect(xlow,  ymax + 0.01 + barheight*(isub-1)/4, barmax, ymax + 0.01 + barheight*isub/4, col = subcol[isub], border=NA, xpd=TRUE)
-   text(x=barmax,y=ymax + 0.01 + barheight*(isub-1)/4, labels=subid[isub],cex=0.5, adj=c(-0.2,0), xpd=TRUE)
+   rect(xlow,  ymax + 0.01 + barheight*(isub-1)/nsub, barmax, ymax + 0.01 + barheight*isub/nsub, col = subcol[isub], border=NA, xpd=TRUE)
+   text(x=barmax,y=ymax + 0.01 + barheight*(isub-1)/nsub, labels=subid[isub],cex=0.5, adj=c(-0.2,0), xpd=TRUE)
    if(isub==1) text(x=barmax,y=bartop, labels="Subplate",cex=0.7, adj=c(-0.2,0), xpd=TRUE)
    }
   }
@@ -963,8 +966,8 @@ plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,ne
 
  png(paste0("Plate",sfx,".png"), pointsize = cex.pointsize *  12)
   image(t(zmat), axes=FALSE,xlab="Plate column",ylab="Plate row",col=colpal,cex.lab=1.2)  
-  axis(1,at=(0:(ncol(zmat)-1))/(ncol(zmat)-1),labels=colnames(zmat),cex.axis=0.8)
-  axis(2,at=(0:(nrow(zmat)-1))/(nrow(zmat)-1),labels=rownames(zmat),cex.axis=0.8)
+  axis(1,at=(0:(ncol(zmat)-1))/(max(2,ncol(zmat))-1),labels=colnames(zmat),cex.axis=0.8)
+  axis(2,at=(0:(nrow(zmat)-1))/(max(2,nrow(zmat))-1),labels=rownames(zmat),cex.axis=0.8)
   if(!missing(neginfo)) markneg(negcol=negcol)
   addlegend(plotvar=plotvar, main=vardesc)
   dev.off()
@@ -977,8 +980,8 @@ plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,ne
   png(paste0("Subplate",sfx,".png"), pointsize = cex.pointsize *  12)
    image(t(zmat), axes=FALSE,xlab="Plate column",ylab="Plate row",col=colpalgray,cex.lab=1.2)
    image(t(zmatc), axes=FALSE,col=subplatecols, add=TRUE) 
-   axis(1,at=(0:(ncol(zmat)-1))/(ncol(zmat)-1),labels=colnames(zmat),cex.axis=0.8)
-   axis(2,at=(0:(nrow(zmat)-1))/(nrow(zmat)-1),labels=rownames(zmat),cex.axis=0.8)
+   axis(1,at=(0:(ncol(zmat)-1))/(max(2,ncol(zmat))-1),labels=colnames(zmat),cex.axis=0.8)
+   axis(2,at=(0:(nrow(zmat)-1))/(max(2,nrow(zmat))-1),labels=rownames(zmat),cex.axis=0.8)
    if(!missing(neginfo)) markneg(negcol=negcol)
    addlegend(plotvar=plotvar, main=vardesc, colpalette=colpalgray, subid=subplateids, subcol=subplatecols)
    dev.off()
@@ -1097,7 +1100,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     sampdepth.max <- apply(depthsub, 1, max)
   }
   samp.removed <- NULL
-  if(cocall.thresh >= 0) {  # remove samples which wont get self-rel
+  if(cocall.thresh >= 0) {  # remove samples which wont get self-rel (unless -ve cocall.thresh)
    samp.removed <- which(sampdepth.max < 2)
    ulow <- which(lowpairs[,1] %in% samp.removed | lowpairs[,2] %in% samp.removed)
    if(length(ulow) > 0) lowpairs <- lowpairs[-ulow,,drop=FALSE]
@@ -1328,10 +1331,10 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     cat("first",neprint,"eigenvalues:",eval[1:neprint],"\n")
     #diagnostic plots using first PC
     png(paste0("PC1vInb", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
-      plot(I(selfrel-1) ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Inbreeding")
+      plot(I(selfrel-1)[pcasamps] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Inbreeding")
       dev.off()
     png(paste0("PC1vDepth", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
-      plot(sampdepthsub ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Mean Sample Depth")
+      plot(sampdepthsub[pcasamps] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Mean Sample Depth")
       dev.off()  
     if(npc > 1) {
      if(withPlotly){
@@ -1383,7 +1386,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
 writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # IDuse, metadf is for only those samples in Guse
  Gname <- deparse(substitute(Guse))
  samp.removed <- integer(0)
- if(outtype==0) cat("Warning, no output will be produced \nSpecify outtype(s):\n 1 R datasets\n 2 G matrix\n 3 long G\n 4 inbreeding\n 5 t-SNE\n 5 PCA\n")
+ if(isTRUE(outtype==0)) cat("Warning, no output will be produced \nSpecify outtype(s):\n 1 R datasets\n 2 G matrix\n 3 long G\n 4 inbreeding\n 5 t-SNE\n 5 PCA\n")
  if (is.list(Guse)) {
   if("PC" %in% names(Guse)) {PCtemp <- Guse$PC; nindout <- nrow(PCtemp$x)}
   if("samp.removed" %in% names(Guse)) samp.removed <- Guse$samp.removed
@@ -1576,7 +1579,7 @@ genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref
   }
 
 ## Write KGD back to VCF file
-writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, usePL=FALSE, contig.meta=FALSE){
+writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, allele.ref="C", allele.alt="G", usePL=FALSE, contig.meta=FALSE){
   if (is.null(outname)) outname <- "GBSdata"
   filename <- paste0(outname,".vcf")
   if(!exists("alleles"))
@@ -1598,6 +1601,8 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   alt <- alt[indsubset, snpsubset]
   genon0 <- genon[indsubset, snpsubset]
   pmat <- matrix(puse[snpsubset], nrow=length(indsubset), ncol=length(snpsubset), byrow=TRUE)
+  if(length(allele.ref) == nsnps) allele.ref <- allele.ref[snpsubset]
+  if(length(allele.alt) == nsnps) allele.alt <- allele.alt[snpsubset]
   
   # Meta information
   metalik <-  '##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype Likelihood">'
@@ -1626,8 +1631,8 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
     out[,2] <- 1:length(snpsubset)
   }
   out[,3] <- SNP_Names[snpsubset]
-  out[,4] <- rep("C", length(snpsubset))
-  out[,5] <- rep("G", length(snpsubset))
+  out[,4] <- allele.ref
+  out[,5] <- allele.alt
   out[,6] <- rep(".", length(snpsubset))
   out[,7] <- rep(".", length(snpsubset))
   out[,8] <- rep(".", length(snpsubset))

@@ -1,4 +1,6 @@
 #!/bin/echo Source me don't execute me 
+pedver <- "0.9.3"
+cat("GBS-PedAssign for KGD version:",pedver,"\n")
 
 # assume all in pedfile are in the genotype results. To do: remove those that are not
 OK4ped <- TRUE 
@@ -182,7 +184,7 @@ bestmatch <- function(ospos, parpos, Guse, partype, matchcriterion = "rel") {
   #matchcriterion == "EMM" added later, but made to work exactly the same (will redo EMM for best 2 later)
   if(!matchcriterion == "EMM") matchcriterion <- "rel"
   if (missing(partype)) partype <- "Par"
-  if(length(parpos) > 0 ) {
+  if(length(na.omit(parpos)) > 0 ) {
    diag(Guse) <- -1     # prevent self-parenting
    parchk <- Guse[ospos, parpos,drop=FALSE]
    if(matchcriterion == "rel") {
@@ -206,7 +208,9 @@ bestmatch <- function(ospos, parpos, Guse, partype, matchcriterion = "rel") {
    out.df <- data.frame(seqID[indsubset][ospos], seqID[indsubset][parpos[maxpos]], seqID[indsubset][parpos[maxpos.2]], 
              relatedness = maxrel[, 1], rel2nd = maxrel[, 2], rel12=rel12, stringsAsFactors = FALSE)
    } else {
-   out.df <- data.frame(character(0),character(0),character(0),numeric(0),numeric(0),numeric(0), stringsAsFactors = FALSE)
+   cat("Warning: a",partype,"group has no genotyped individuals, includes offspring seqID:",seqID[indsubset][ospos][1],"\n")
+   nprog <- length(ospos)
+   out.df <- data.frame(seqID[indsubset][ospos],character(nprog),character(nprog),rep(NA,nprog),rep(NA,nprog),rep(NA,nprog),stringsAsFactors = FALSE)
    }
   names(out.df) <- c("seqID", paste0("Best", partype, "Match"), paste0(partype, "Match2nd"), paste0(partype, "rel"), paste0(partype, "rel2nd"), paste0(partype, "12rel") )
   out.df
@@ -256,12 +260,12 @@ bestmatesmatch <- function(ospos, matespos, Guse, matchcriterion = "rel") {
   out.df
 }
 
-parEplot <- function(partype,EMMvar,relvar,plotcol="black") {
+parEplot <- function(partype,EMMvar,relvar,plotcol="black",relthresh=rel.thresh,emmthresh=emm.thresh) {
       png(paste0("Best", partype, "MatchesE.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
       plot(EMMvar ~ relvar, main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
           ylab = "Excess mismatch rate",col=plotcol, cex=0.8)
-      abline(v=rel.thresh, col="grey")
-      abline(h=emm.thresh, col="grey")
+      abline(v=relthresh, col="grey")
+      abline(h=emmthresh, col="grey")
       dev.off()
  }
 
@@ -389,7 +393,7 @@ groupmatch <- function(Guse, partype) {
      tempAssign <- rep("Y",nrow(allgmatch))
      if(length(bootpos) > 0) tempAssign[which(allgmatch[,paste0(partype,"Reliability")] < boota.thresh )] <- "B"
      tempAssign[which(EMMrate > emm.thresh)] <- "E"
-     tempAssign[which(allgmatch[, paste0(partype, "rel")] < rel.thresh)] <- "N"
+     tempAssign[which(allgmatch[, paste0(partype, "rel")] < rel.thresh | is.na(allgmatch[, paste0(partype, "rel")]))] <- "N"
       # for E assigns, check if the 2nd parent is possible.  
      tempAssign[which(allgmatch[, paste0(partype, "rel2nd")] >= rel.thresh & EMMrate2 < emm.thresh & tempAssign == "E")] <- "A"
      allgmatch[, paste0(partype, "Assign")] <- tempAssign
@@ -398,7 +402,7 @@ groupmatch <- function(Guse, partype) {
           ylab = "Raw mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8)
       abline(v=rel.thresh, col="grey")
       dev.off()
-     parEplot(partype,EMMrate,allgmatch[, paste0(partype, "rel")],plotcol=fcolo[match(allgmatch$seqID,seqID)])
+     parEplot(partype,EMMrate,allgmatch[, paste0(partype, "rel")],plotcol=fcolo[match(allgmatch$seqID,seqID)],relthresh=rel.thresh)
      tempch <- assign.pch[match(tempAssign,assign.rank)]
      png(paste0("ExpMM-", partype, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
       plot(allgmatch[, paste0("mmrate", partype)] ~ allgmatch[, paste0("exp.mmrate", partype)] , main = paste("Best", partype, "Matches"), xlab = "Expected mismatch rate", 
@@ -411,7 +415,7 @@ groupmatch <- function(Guse, partype) {
      mmpalette <- colorRampPalette(c("blue","red"))(50)
      mmcol <- mmpalette[trunc(1+50*(EMMrate-min(EMMrate,na.rm=TRUE))/(diff(range(EMMrate,na.rm=TRUE))+1E-6))]
      legend_image <- as.raster(matrix(rev(mmpalette), ncol = 1))
-     xyrange <- range(c(allgmatch[, paste0(partype, "rel")],allgmatch[, paste0(partype,"rel2nd")]))
+     xyrange <- range(c(allgmatch[, paste0(partype, "rel")],allgmatch[, paste0(partype,"rel2nd")]),na.rm=TRUE)
      png(paste0("Best2", partype, "Matches.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
       plot(allgmatch[, paste0(partype,"rel2nd")] ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
           ylab = "Relatedness to 2nd best",col=mmcol,xlim=xyrange,ylim=xyrange, cex=0.8)
@@ -493,8 +497,8 @@ matesmatch <- function(Guse) {
      allgmatch$BothAssign <- tempAssign 
      tempch <- assign.pch[match(tempAssign,assign.rank)]
       #havent done joint EMM yet ...
-     parEplot("Father",EMMrateFather,allgmatch$Fatherrel,plotcol=fcolo[match(allgmatch$seqID,seqID)])
-     parEplot("Mother",EMMrateMother,allgmatch$Motherrel,plotcol=fcolo[match(allgmatch$seqID,seqID)])
+     parEplot("Father",EMMrateFather,allgmatch$Fatherrel,plotcol=fcolo[match(allgmatch$seqID,seqID)],relthresh=rel.threshF)
+     parEplot("Mother",EMMrateMother,allgmatch$Motherrel,plotcol=fcolo[match(allgmatch$seqID,seqID)],relthresh=rel.threshM)
      noffspringmates <- data.frame(table(with(allgmatch,paste(BestFatherMatch,BestMotherMatch,sep=":"))))
      colnames(noffspringmates)[2] <- "MatesPairFreq"
      matesinfo$pairID <<- with(matesinfo,paste(MaleID,FemaleID,sep=":"))
