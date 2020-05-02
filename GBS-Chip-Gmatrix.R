@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.9.3"
+KGDver <- "0.9.4"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -1333,9 +1333,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     png(paste0("PC1vInb", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
       plot(I(selfrel-1)[pcasamps] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Inbreeding")
       dev.off()
-    png(paste0("PC1vDepth", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+    if(!gform=="chip") {
+     png(paste0("PC1vDepth", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
       plot(sampdepthsub[pcasamps] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Mean Sample Depth")
       dev.off()  
+     }
     if(npc > 1) {
      if(withPlotly){
         temp_p <- plot_ly(y=PC$x[, 2],x=PC$x[, 1], type="scatter", mode="markers",
@@ -1572,14 +1574,14 @@ Gbend <- function(GRM,mineval=0.001, doplot=TRUE, sfx="", evalsum="free") {
 
 ## function to use in writeVCF
 genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref, alt
-  nobj <- length(vec)/6
-  outstr <-  paste(vec[1:nobj],paste(vec[nobj+(1:nobj)],vec[2*nobj+(1:nobj)],vec[3*nobj+(1:nobj)],sep=","), 
+  nobj <- length(vec)/9
+  outstr <-  gsub("NA",".",gsub("NA,","",paste(vec[1:nobj],paste(vec[nobj+(1:nobj)],vec[2*nobj+(1:nobj)],vec[3*nobj+(1:nobj)],sep=","), 
                    paste(vec[4*nobj+(1:nobj)],vec[5*nobj+(1:nobj)],vec[6*nobj+(1:nobj)],sep=","), 
-                   paste(vec[7*nobj+(1:nobj)],vec[8*nobj+(1:nobj)],sep=","), sep=":")
+                   paste(vec[7*nobj+(1:nobj)],vec[8*nobj+(1:nobj)],sep=","), sep=":")))
   }
 
 ## Write KGD back to VCF file
-writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, allele.ref="C", allele.alt="G", usePL=FALSE, contig.meta=FALSE){
+writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, keepgt=TRUE, mindepth=0, allele.ref="C", allele.alt="G", usePL=FALSE, contig.meta=FALSE){
   if (is.null(outname)) outname <- "GBSdata"
   filename <- paste0(outname,".vcf")
   if(!exists("alleles"))
@@ -1673,14 +1675,19 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   temp <- options()$scipen
   options(scipen=10)  #needed for formating
   ## Compute the genotype fields
+  depthsub <- ref+alt
+  is.na(genon) <- is.na(paa)  <- is.na(pab)  <- is.na(pbb)  <- is.na(llaa)  <- is.na(llab)  <- is.na(llbb) <- (depthsub < mindepth)
+  rm(depthsub)
   genon0[is.na(genon0)] <- -1
+  if(!keepgt) genon0[] <- -1  # set all elements to missing
   if (is.big) {
    gt <- apply(genon0+2, 2, function(x) c("./.","1/1","0/1","0/0")[x])
    out2[,-c(1:9)] <- apply(cbind(gt,paa,pab,pbb,llaa,llab,llbb,ref,alt),1,genostring)
    } else {
    gt <- sapply(as.vector(genon0), function(x) switch(x+2,"./.","1/1","0/1","0/0"))
-   out[,-c(1:9)] <- matrix(paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","), sep=":"), 
+   out[,-c(1:9)] <- matrix(gsub("NA",".",gsub("NA,","",paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","), sep=":"))), 
                            nrow=length(snpsubset), ncol=length(indsubset), byrow=TRUE)
+      # for missings, first change NA, to empty so that any set of NA,NA,...,NA changes to NA, then can set that to . which is vcf missing for the whole field
    }
   options(scipen=temp)
   
