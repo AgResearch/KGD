@@ -1059,11 +1059,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   if(min(depth) < 2) depth[depth < 2] <- 1.1        # in case got here without executing this
   # puse - determine whether global or indiv specifc
   if(is.matrix(puse)) {  # allows matrix puse to be specified relative to all or subsetted data
-   cat("Using individual allele frequecies\n")
+   cat("Using individual allele frequencies\n")
    if(ncol(puse) == nsnps & nsnps > nsnpsub) puse <- puse[,snpsubset]
    if(nrow(puse) == nind & nind > nindsub) puse <- puse[indsubset,]
    } else {
-   cat("Using global allele frequecies\n")
+   cat("Using global allele frequencies\n")
    if(length(puse) == nsnps & nsnps > nsnpsub) puse <- puse[snpsubset]
    puse <- matrix(puse,byrow=TRUE,nrow=nindsub,ncol=nsnpsub)
    }
