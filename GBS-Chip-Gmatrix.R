@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.9.4"
+KGDver <- "0.9.5"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -136,7 +136,7 @@ readGBS <- function(genofilefn = genofile) {
 
 readTD <- function(genofilefn0 = genofile, skipcols=0) {
   havedt <- require("data.table")
-  ghead <- scan(genofilefn0, what = "", nlines = 1, sep = ",")
+  ghead <- scan(genofilefn0, what = "", nlines = 1, sep = ",", quote="")
   if(skipcols > 0) ghead <- ghead[-(1:skipcols)]
   nsnps <<- (length(ghead) - 1)/2
   SNP_Names <<- read.table(text=ghead[-1][2*seq(nsnps)],sep="_",fill=TRUE,stringsAsFactors=FALSE)[,1]
@@ -153,7 +153,7 @@ readTD <- function(genofilefn0 = genofile, skipcols=0) {
    nind <<- length(seqID)
    alleles <<- as.matrix(genosin[,-1,with=FALSE])
    } else {
-   genosin <- scan(genofilefn0, skip = 1, sep = ",", what = c(list(seqID = ""), rep(list(0), 2*nsnps))) 
+   genosin <- scan(genofilefn0, skip = 1, sep = ",", what = c(list(seqID = ""), rep(list(0), 2*nsnps)), quote="") 
    seqID <<- as.character(genosin[[1]])
    nind <<- length(seqID)
    alleles <<- matrix(0, nrow = nind, ncol = 2 * nsnps)
@@ -163,12 +163,12 @@ readTD <- function(genofilefn0 = genofile, skipcols=0) {
 }
 
 readANGSD <- function(genofilefn0 = genofile) {
-  ghead <- scan(genofilefn0, what = "", nlines = 1, sep = "\t")
+  ghead <- scan(genofilefn0, what = "", nlines = 1, sep = "\t", quote="")
   nind <<- (length(ghead) - 1) / 4
   if (nind != floor(nind)) nind  <<- length(ghead) / 4
   if (nind != floor(nind)) print("Incorrect number of columns")
   seqID <<- substr(ghead,1,nchar(ghead)-2)[seq(4,4*nind,4)]
-  genosin <- scan(genofilefn0, skip = 1, sep = "\t", flush=TRUE, what = rep(list(integer(0)), 4*nind))
+  genosin <- scan(genofilefn0, skip = 1, sep = "\t", flush=TRUE, what = rep(list(integer(0)), 4*nind), quote="")
   nsnps <<- length(genosin[[1]])
   SNP_Names <<- paste0("SNP",formatC(seq(nsnps),width=nchar(nsnps),flag="0"))  # with leading zeros
   alleles4 <- matrix(aperm(array(unlist(genosin,use.names=FALSE),dim =c(nsnps,4,nind)), c(3,2,1)), nrow=nind)
@@ -187,9 +187,57 @@ readANGSD <- function(genofilefn0 = genofile) {
  invisible(NULL)
 }
 
+ read.vcf <- function(vcffile=genofile) {  # uses AD then GT if either/both available
+  # undoc function. Needs data.table and (for .gz files) R.utils
+  if(!require(data.table)) stop("data.table package required for read.vcf.gt")
+  vcfin <- fread(vcffile)   # manages to skip the headers by itself
+  if(colnames(vcfin)[1]=="V1") { 
+   cat("Correcting added first column name, remove trailing (blank?) column (ignore fread warning below)\n")
+   colnames(vcfin)[1:ncol(vcfin)-1] <-  colnames(vcfin)[2:ncol(vcfin)] 
+   vcfin[,ncol(vcfin)] <- NULL
+   }
+  SNP_Names <<- vcfin$ID
+  nsnps <<- length(SNP_Names)
+  formatcol <- which(colnames(vcfin)=="FORMAT")
+  seqID <<-  colnames(vcfin)[-(1:formatcol)]
+  nind <<- length(seqID)
+  chrom <<- vcfin$`#CHROM`
+  pos <<- vcfin$POS
+  nfields <- 1+ lengths(regmatches(vcfin$FORMAT,gregexpr(":",vcfin$FORMAT)))
+  tempformats <- read.table(text=vcfin$FORMAT,sep=":",fill=TRUE,stringsAsFactors=FALSE,col.names=paste0("V",1:max(nfields)))
+  gthave = apply(tempformats=="GT",1,any)
+  gtpos = unlist(apply(tempformats=="GT",1,which))
+  adhave = apply(tempformats=="AD",1,any)
+  adpos = unlist(apply(tempformats=="AD",1,which))
+  genon <<- matrix(NA,nrow=nind,ncol=nsnps)
+  if(any(gthave)) {
+   tempgt <- read.table(text=as.matrix(vcfin[gthave,-(1:formatcol)]),sep=":",fill=TRUE,stringsAsFactors=FALSE)[matrix(c(1:(nind*sum(gthave)),rep(gtpos,nind)),ncol=2,dimnames=list(NULL,c("row","col")))]
+   genongt <- t(matrix(rowSums(read.table(text=gsub("/","|",tempgt),sep="|",na.strings=".")),nrow=sum(gthave)))
+   genon[,which(gthave)] <<- genongt
+   }
+  depth <<- matrix(Inf, nrow = nind, ncol = nsnps)
+  if(any(adhave)) {
+   tempad <- read.table(text=as.matrix(vcfin[adhave,-(1:formatcol)]),sep=":",fill=TRUE,stringsAsFactors=FALSE)[matrix(c(1:(nind*sum(adhave)),rep(adpos,nind)),ncol=2,dimnames=list(NULL,c("row","col")))]
+   tempad2 <- read.table(text=sub(".","0,0",tempad,fixed=TRUE),sep=",")
+   ref <- t(matrix(tempad2[,1],nrow=sum(adhave)))
+   alt <- t(matrix(tempad2[,2],nrow=sum(adhave)))
+   genonad <- trunc((2*ref/(ref+alt))-1)+1
+   genon[,which(adhave)] <<- genonad
+   alleles <<- matrix(Inf, nrow = nind, ncol = 2 * nsnps)
+   alleles[,seq(1, 2 * nsnps - 1, 2)[which(adhave)]] <<- ref
+   alleles[,seq(2, 2 * nsnps, 2)[which(adhave)]] <<- alt
+   depth[,which(adhave)] <<- ref + alt
+   }
+  depth[is.na(genon)] <<- 0
+  p <<- colMeans(genon, na.rm = TRUE)/2 # same as pg further down
+  if(!any(adhave)) gform <- "chip"
+  invisible(NULL)
+ }
+
+
 readChip <- function(genofilefn0 = genofile) {
-  ghead <- scan(genofilefn0,what="",nlines=1,sep=",")
-  genost <- scan(genofilefn0,what="",skip=1,sep=",") # read as text ... easier to pull out elements than list of nsnps+1
+  ghead <- scan(genofilefn0,what="",nlines=1,sep=",", quote="")
+  genost <- scan(genofilefn0,what="",skip=1,sep=",", quote="") # read as text ... easier to pull out elements than list of nsnps+1
   SNP_Names <<- ghead[-1]
   nsnps <<- length(SNP_Names)
   snpnums <- ((1:length(genost))-1) %% (nsnps+1)
@@ -207,7 +255,7 @@ readTassel <- function(genofilefn0 = genofile) {
   havedt <- require("data.table")
   havedt <- FALSE       # problem with read.table(text= when > 2bill
   gsep <- switch(gform, uneak = "|", Tassel = ",")
-  ghead <- scan(genofilefn0, what = "", nlines = 1, sep = "\t")
+  ghead <- scan(genofilefn0, what = "", nlines = 1, sep = "\t", quote="")
   nind <<- length(ghead) - switch(gform, uneak = 6, Tassel = 2)
   if (havedt & gform=="Tassel") {
    # placeholder for code to use data.table
@@ -237,13 +285,13 @@ readTassel <- function(genofilefn0 = genofile) {
    } else {
    seqID <<- switch(gform, uneak = ghead[2:(nind + 1)], Tassel = ghead[-(1:2)])
    if (gform == "Tassel"){
-     genosin <- scan(genofilefn0, skip = 1, sep = "\t", what = c(list(chrom = "", coord = 0), rep(list(""), nind)))
+     genosin <- scan(genofilefn0, skip = 1, sep = "\t", what = c(list(chrom = "", coord = 0), rep(list(""), nind)), quote="")
      chrom <<- genosin[[1]]
      pos <<- genosin[[2]]
      SNP_Names <<- paste(chrom,pos,sep="_")
      }
    if (gform == "uneak"){
-     genosin <- scan(genofilefn0, skip = 1, sep = "\t", what = c(list(chrom = ""), rep(list(""), nind), list(hetc1 = 0, hetc2 = 0, acount1 = 0, acount2 = 0, p = 0)))
+     genosin <- scan(genofilefn0, skip = 1, sep = "\t", what = c(list(chrom = ""), rep(list(""), nind), list(hetc1 = 0, hetc2 = 0, acount1 = 0, acount2 = 0, p = 0)), quote="")
      SNP_Names <<- genosin[[1]]
    }
    nsnps <<- length(SNP_Names)
@@ -280,7 +328,7 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
    if(exists("genon")) genon <<- genon[, -snppos]
    if(exists("chrom")) chrom <<- chrom[-snppos]
    if(exists("pos")) pos <<- pos[-snppos]
-   if (!gform == "chip") {
+   if (exists("alleles")) {
      uremovea <- sort(c(2 * snppos, 2 * snppos - 1))  # allele positions
      if(exists("RAcounts")) RAcounts <<- RAcounts[-snppos, ]
      alleles <<- alleles[, -uremovea]
@@ -483,6 +531,7 @@ na.zero <- function (x) {
 calcp <- function(indsubset, pmethod="A") {
  if(!pmethod == "G") pmethod <- "A"
  if (missing(indsubset))   indsubset <- 1:nind
+ if(any(depth==Inf)) pmethod <- "G"
  if (pmethod == "A") {
   if (nrow(alleles) == nind) {
    RAcountstemp <- matrix(colSums(alleles[indsubset,,drop=FALSE]), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
@@ -499,7 +548,7 @@ calcp <- function(indsubset, pmethod="A") {
 GBSsummary <- function() {
  havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
  if(havedepth) cat("depth object already exists - reusing\n")
- if(havedepth & exists("depth.orig")) depth <- depth.orig
+ if(havedepth & exists("depth.orig")) depth <<- depth.orig
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
 #  storage.mode(depth) <- "integer"
@@ -538,7 +587,10 @@ GBSsummary <- function() {
    seqID.removed <<- c(seqID.removed, seqID[u1])
    }
   samp.remove(union(u0, u1))
-  if (!exists("p") & exists("alleles")) { # not redone e.g. after merge
+  docalcp <- FALSE
+  if (!exists("p")) docalcp <- TRUE
+  if (exists("p")) if (length(p) != nsnps) docalcp <- TRUE
+  if (docalcp) { # not redone e.g. after merge
    p <<- calcp()
    if (is.null(p)) {
     cat("alleles not available, using genotype method for p\n")
@@ -613,32 +665,44 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
   # suggested by Jaroslav Klapste (Scion) 
   hist(SNPcallrate, seq(0,1,0.02), col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of SNP call rates", xlab = "Call rate (proportion of samples scored)")
   dev.off()
- if (gform == "chip") write.csv(data.frame(seqID, callrate), "SampleStats.csv", row.names = FALSE)
- if (!gform == "chip") {
+ depthinfo <- TRUE; if(min(depth)==Inf) depthinfo <- FALSE
+ if (!depthinfo) write.csv(data.frame(seqID, callrate), "SampleStats.csv", row.names = FALSE)
+ if (depthinfo) {
   write.csv(data.frame(seqID, callrate, sampdepth), "SampleStats.csv", row.names = FALSE)
   sampdepth.scored <- sampdepth * nsnps/(nsnps - depth0)
+  ufinite <- which(sampdepth < Inf)
+  haschip <- (length(ufinite) < nind)
+  noninf <- ""; if (haschip) noninf <- "(non-chip)"
   cat("Mean sample depth:", mean(sampdepth), "\n")
-  if(outlevel > 4) {
-   png("SampDepth.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-    plot(sampdepth ~ sampdepth.med, col = "#80808080", pch = 16, cex = 1.2, main = "Sample Depth", xlab = "Median", ylab = "Mean")
+  if(haschip)   cat("Mean sample depth (non-chip):", mean(sampdepth[ufinite]), "\n")
+  if(length(ufinite) > 0) {
+   if(outlevel > 4) {
+    png("SampDepth.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
+     plot(sampdepth[ufinite] ~ sampdepth.med[ufinite], col = "#80808080", pch = 16, cex = 1.2, main = paste("Sample Depth",noninf), xlab = "Median", ylab = "Mean")
+     dev.off()
+    }
+   png("SampDepth-scored.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
+    plot(sampdepth.scored[ufinite] ~ sampdepth[ufinite], col = "#80808080", pch = 16, cex = 1.2, main = paste("Sample Depth",noninf), xlab = "Mean", ylab = "Mean with depth>0")
+    dev.off()
+   png("SampDepthHist.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
+    hist(sampdepth[ufinite], 100, col = "cornflowerblue", border = "cornflowerblue", main = paste("Histogram of mean sample depth",noninf), xlab = "Mean sample depth")
+    dev.off()
+   png("SampDepthCR.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
+    plot(sampdepth[ufinite] ~ callrate[ufinite], col = "#80808080", pch = 16, cex = 1.2, main = paste("Sample Depth v Call rate",noninf), xlab = "Sample call rate", ylab = "Mean sample depth")
     dev.off()
    }
-  png("SampDepth-scored.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-   plot(sampdepth.scored ~ sampdepth, col = "#80808080", pch = 16, cex = 1.2, main = "Sample Depth", xlab = "Mean", ylab = "Mean with depth>0")
-   dev.off()
-  png("SampDepthHist.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-   hist(sampdepth, 100, col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of mean sample depth", xlab = "Mean sample depth")
-   dev.off()
-  png("SampDepthCR.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-   plot(sampdepth ~ callrate, col = "#80808080", pch = 16, cex = 1.2, main = "Sample Depth v Call rate", xlab = "Sample call rate", ylab = "Mean sample depth")
-   dev.off()
-  png("SNPDepthHist.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
-   hist(snpdepth, 100, col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of mean SNP depth", xlab = "Mean SNP depth")
-   dev.off()
-  png("SNPDepth.png", width = 640, height = 640, pointsize = cex.pointsize * 15)
-   plot(SNPcallrate ~ snpdepth, log="x", col = "#80808080", pch = 16, cex = 1, main = "SNP Depth", ylab = "SNP Call rate (proportion of samples scored)", 
-        xlab = "Mean SNP depth (log scale)")
-   dev.off()
+  ufinite <- which(snpdepth < Inf)
+  haschip <- (length(ufinite) < nsnps)
+  noninf <- ""; if (haschip) noninf <- "(non-chip)"
+  if(length(ufinite) >0 ) {
+   png("SNPDepthHist.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
+    hist(snpdepth[ufinite], 100, col = "cornflowerblue", border = "cornflowerblue", main = paste("Histogram of mean SNP depth",noninf), xlab = "Mean SNP depth")
+    dev.off()
+   png("SNPDepth.png", width = 640, height = 640, pointsize = cex.pointsize * 15)
+    plot(SNPcallrate[ufinite] ~ snpdepth[ufinite], log="x", col = "#80808080", pch = 16, cex = 1, main = paste("SNP Depth",noninf), ylab = "SNP Call rate (proportion of samples scored)", 
+         xlab = "Mean SNP depth (log scale)")
+    dev.off()
+   }
   }
  xaxpts <<- qchisq(QQprobpts,df=1)
  finplot()
@@ -681,7 +745,27 @@ if(!functions.only) {
 ################## functions
 upper.vec <- function(sqMatrix,diag=FALSE) as.vector(sqMatrix[upper.tri(sqMatrix,diag=diag)])
 #seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1] # might not get number of cols right
-seq2samp <- function(seqIDvec=seqID, splitby="_", ...) sapply(strsplit(seqIDvec,split=splitby, ...),"[",1)
+seq2samp1 <- function(seqIDvec=seqID, splitby="_", ...) sapply(strsplit(seqIDvec,split=splitby, ...),"[",1)
+seq2samp <- function(seqIDvec=seqID, splitby="_",nparts=NULL,dfout=FALSE, ...){
+ if(is.null(nparts)) {
+  sampout <- sapply(strsplit(seqIDvec,split=splitby, ...),"[",1)
+  } else { 
+  nparts <- as.integer(nparts)
+  if(nparts < 2) nparts <- 2
+  if(splitby %in% c(".","$","^","|","?","*","+","(",")")) splitby <- paste0("\\",splitby)
+  stringpart <- paste(rep("(\\S+)",nparts),collapse=splitby)
+  stringpart <- paste(rep("(.+)",nparts),collapse=splitby)
+  seqIDexpr <- paste0("^",stringpart,"$")
+  sampout <- gsub(seqIDexpr,"\\1",seqIDvec)
+  if(dfout) {
+    sampout <- as.data.frame(sampout,stringsAsFactors=FALSE)
+    for(ipart in 2:nparts) sampout <- cbind(sampout, gsub(seqIDexpr,paste0("\\",ipart),seqIDvec),stringsAsFactors=FALSE)
+    colnames(sampout) <- paste0("V",1:nparts)
+   }
+  }
+  sampout
+ }
+
 
 colourby <- function(colgroup, groupsort=FALSE,maxlight=1,hclpals=character(0)) {
  #maxlight is maximum lightness between 0 and 1
@@ -1053,7 +1137,6 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   }
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
-  npc <- sign(npc) * min(abs(npc),nsnpsub,nindsub)
   if (sum(dim(depth) != dim(depth.orig)) >0 ) cat("Warning: depth and depth.orig are different dimensions\n")
   depthsub <- depth.orig[indsubset, snpsubset]
   if(min(depth) < 2) depth[depth < 2] <- 1.1        # in case got here without executing this
@@ -1213,6 +1296,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     cat("SeqIDs removed for PCA and/or heatmap\n"); print(seqID[indsubset][samp.removed])
     }
    pcacolo <- fcolo[indsubset[pcasamps]]
+   npc <- sign(npc) * min(abs(npc),nsnpsub,length(pcasamps))
    if (npc > 0) {
      if (samptype=="pooled") {
       temp <- sqrt(Gpool[pcasamps,pcasamps] - min(Gpool[pcasamps,pcasamps], na.rm = TRUE))
@@ -1275,7 +1359,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
      }
     dev.off()
    }
-  if (!gform == "chip") {
+  if (max(sampdepthsub) < Inf) {
     ylabel <- "Self-relatedness estimate using G5"
     if(samptype=="pooled") ylabel <- "Self-relatedness estimate using Gpool"
     if(withPlotly){
@@ -1333,7 +1417,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     png(paste0("PC1vInb", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
       plot(I(selfrel-1)[pcasamps] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Inbreeding")
       dev.off()
-    if(!gform=="chip") {
+    if(max(sampdepthsub) < Inf) {
      png(paste0("PC1vDepth", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
       plot(sampdepthsub[pcasamps] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, xlab = "Principal component 1", ylab = "Mean Sample Depth")
       dev.off()  
@@ -1388,7 +1472,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
 writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # IDuse, metadf is for only those samples in Guse
  Gname <- deparse(substitute(Guse))
  samp.removed <- integer(0)
- if(isTRUE(outtype==0)) cat("Warning, no output will be produced \nSpecify outtype(s):\n 1 R datasets\n 2 G matrix\n 3 long G\n 4 inbreeding\n 5 t-SNE\n 5 PCA\n")
+ if(isTRUE(outtype==0)) cat("Warning, no output will be produced \nSpecify outtype(s):\n 1 R datasets\n 2 G matrix\n 3 long G\n 4 inbreeding\n 5 t-SNE\n 6 PCA\n")
  if (is.list(Guse)) {
   if("PC" %in% names(Guse)) {PCtemp <- Guse$PC; nindout <- nrow(PCtemp$x)}
   if("samp.removed" %in% names(Guse)) samp.removed <- Guse$samp.removed
@@ -1450,6 +1534,13 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
   }
 }
 
+G5toDAWG <- function(Guse) {
+ #Guse should be a G5 matrix calculated using allele frequencies of 0.5 for all SNPs
+ #See Bilton thesis Eqn 6.20
+ Z <- 0.5 + Guse/4
+ Ztilde <- mean(upper.vec(Z),na.rm=TRUE)
+ GWG <- 2* (Z - Ztilde) / (1-Ztilde)
+ }
 
 ##### functions for G matrix comparison 
 regpanel <- function(x,y,nvars=3, ...) {
@@ -1581,7 +1672,8 @@ genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref
   }
 
 ## Write KGD back to VCF file
-writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, keepgt=TRUE, mindepth=0, allele.ref="C", allele.alt="G", usePL=FALSE, contig.meta=FALSE){
+writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, keepgt=TRUE, mindepth=0, allele.ref="C", allele.alt="G", 
+                     verlabel="4.3",usePL=FALSE, contig.meta=FALSE){
   if (is.null(outname)) outname <- "GBSdata"
   filename <- paste0(outname,".vcf")
   if(!exists("alleles"))
@@ -1598,6 +1690,9 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   if(missing(snpsubset))
     snpsubset <- 1:nsnps
   if (missing(IDuse)) IDuse <- seqID[indsubset]
+  if(length(IDuse) == nind & length(indsubset) < nind) IDuse <- IDuse[indsubset] # assume given for all samples instead of subset
+  if(length(IDuse) != length(indusbset) )
+    stop("Lengths of IDuse and indsubset arguments does not match")
   is.big <- (as.numeric(length(indsubset)) * length(snpsubset) > 2^31-1 )
   ref <- ref[indsubset, snpsubset]
   alt <- alt[indsubset, snpsubset]
@@ -1609,7 +1704,7 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   # Meta information
   metalik <-  '##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype Likelihood">'
   if(usePL)   metalik <-  '##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Phred-scaled Genotype Likelihood (rounded)">'
-  metaInfo <- paste('##fileformat=VCFv4.3',paste0("##fileDate=",Sys.Date()),"##source=KGDpackage",
+  metaInfo <- paste(paste0('##fileformat=VCFv',verlabel),paste0("##fileDate=",Sys.Date()),"##source=KGDpackage",
                     '##INFO=<ID=INDEL,Number=0,Type=Flag,Description="dummy">',
                     '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
                     '##FORMAT=<ID=GP,Number=G,Type=Float,Description="Genotype Probability">', 

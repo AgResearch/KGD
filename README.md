@@ -1,6 +1,8 @@
 # KGD
 **K**inship (genetic relatedness) using **G**BS (genotyping-by-sequencing) with **D**epth adjustment
 
+[![HitCount](http://hits.dwyl.com/AgResearch/KGD.svg)](http://hits.dwyl.com/AgResearch/KGD)
+
 R code for the analysis of genotyping-by-sequencing (GBS) data, primarily to construct a genomic relationship matrix for the genotyped individuals. The code can be used on its own, or incorporated into other R programs. There are QC tools (primarily graphical output), relationship estimation tools, pedigree verification tools and pedigree ‘mix and match’ tools. The latter two operations require additional input information about the samples genotyped.
 
 The manual describing the use of the code is **KGDManual.pdf** in the top directory of this repository.
@@ -13,4 +15,4 @@ Dodds, K G, McEwan, J C, Brauning, R, Anderson, R A, Van Stijn, T C, Kristjánss
 
 and for parentage assignment
 
-Dodds, K G, McEwan, J C, Brauning, R, Van Stijn, T C, Rowe, S J, McEwan, K M and Clarke, S M (2019) Exclusion and genomic relatedness methods for assignment of parentage using genotyping-by-sequencing data. *G3: Genes, Genomes, Genetics* (in press). https://doi.org/10.1534/g3.119.400501 
+Dodds, K G, McEwan, J C, Brauning, R, Van Stijn, T C, Rowe, S J, McEwan, K M and Clarke, S M (2019) Exclusion and genomic relatedness methods for assignment of parentage using genotyping-by-sequencing data. *G3: Genes, Genomes, Genetics* **9**, 3239-3247. https://doi.org/10.1534/g3.119.400501 
