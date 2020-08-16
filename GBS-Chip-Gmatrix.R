@@ -1691,7 +1691,7 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
     snpsubset <- 1:nsnps
   if (missing(IDuse)) IDuse <- seqID[indsubset]
   if(length(IDuse) == nind & length(indsubset) < nind) IDuse <- IDuse[indsubset] # assume given for all samples instead of subset
-  if(length(IDuse) != length(indusbset) )
+  if(length(IDuse) != length(indsubset) )
     stop("Lengths of IDuse and indsubset arguments does not match")
   is.big <- (as.numeric(length(indsubset)) * length(snpsubset) > 2^31-1 )
   ref <- ref[indsubset, snpsubset]
