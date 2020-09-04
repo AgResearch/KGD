@@ -2,6 +2,7 @@
 **K**inship (genetic relatedness) using **G**BS (genotyping-by-sequencing) with **D**epth adjustment
 
 [![HitCount](http://hits.dwyl.com/AgResearch/KGD.svg)](http://hits.dwyl.com/AgResearch/KGD)
+[![Hits](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2FAgResearch%2FKGD%2F&count_bg=%238377F7&title_bg=%23555555&icon=&icon_color=%23FFFFFF&title=hits&edge_flat=true)](https://hits.seeyoufarm.com) 
 
 R code for the analysis of genotyping-by-sequencing (GBS) data, primarily to construct a genomic relationship matrix for the genotyped individuals. The code can be used on its own, or incorporated into other R programs. There are QC tools (primarily graphical output), relationship estimation tools, pedigree verification tools and pedigree ‘mix and match’ tools. The latter two operations require additional input information about the samples genotyped.
 
