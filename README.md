@@ -3,6 +3,8 @@
 
 [![HitCount](http://hits.dwyl.io/AgResearch/KGD.svg)](http://hits.dwyl.io/AgResearch/KGD)
 [![HitCount](http://hits.dwyl.io/AgResearch/AgResearch/KGD.svg)](http://hits.dwyl.io/AgResearch/AgResearch/KGD)
+[![HitCount](http://hits.dwyl.com/AgResearch/AgResearch/KGD.svg)](http://hits.dwyl.com/AgResearch/AgResearch/KGD)
+[![HitCount](http://hits.dwyl.com/AgResearch/KGD/KGD.svg)](http://hits.dwyl.com/AgResearch/KGD/KGD)
 
 R code for the analysis of genotyping-by-sequencing (GBS) data, primarily to construct a genomic relationship matrix for the genotyped individuals. The code can be used on its own, or incorporated into other R programs. There are QC tools (primarily graphical output), relationship estimation tools, pedigree verification tools and pedigree ‘mix and match’ tools. The latter two operations require additional input information about the samples genotyped.
 
