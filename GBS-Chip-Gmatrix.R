@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.9.5"
+KGDver <- "0.9.6"
 cat("KGD version:",KGDver,"\n")
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
@@ -218,7 +218,7 @@ readANGSD <- function(genofilefn0 = genofile) {
   depth <<- matrix(Inf, nrow = nind, ncol = nsnps)
   if(any(adhave)) {
    tempad <- read.table(text=as.matrix(vcfin[adhave,-(1:formatcol)]),sep=":",fill=TRUE,stringsAsFactors=FALSE)[matrix(c(1:(nind*sum(adhave)),rep(adpos,nind)),ncol=2,dimnames=list(NULL,c("row","col")))]
-   tempad2 <- read.table(text=sub(".","0,0",tempad,fixed=TRUE),sep=",")
+   tempad2 <- read.table(text=sub(".","0,0",sub(".,.","0,0",tempad,fixed=TRUE),fixed=TRUE),sep=",")
    ref <- t(matrix(tempad2[,1],nrow=sum(adhave)))
    alt <- t(matrix(tempad2[,2],nrow=sum(adhave)))
    genonad <- trunc((2*ref/(ref+alt))-1)+1
@@ -349,9 +349,9 @@ HWpops <- function(snpsubset, indsubset, populations=NULL, depthmat = depth.orig
  for(ipop in 1:npops) {
   thigroup <- popnames[ipop]
   indgroup <- intersect(indsubset,which(populations==thigroup))
-  naa <- colSums(genon[indgroup,snpsubset] == 2, na.rm = TRUE)
-  nab <- colSums(genon[indgroup,snpsubset] == 1, na.rm = TRUE)
-  nbb <- colSums(genon[indgroup,snpsubset] == 0, na.rm = TRUE)
+  naa <- colSums(genon[indgroup,snpsubset,drop=FALSE] == 2, na.rm = TRUE)
+  nab <- colSums(genon[indgroup,snpsubset,drop=FALSE] == 1, na.rm = TRUE)
+  nbb <- colSums(genon[indgroup,snpsubset,drop=FALSE] == 0, na.rm = TRUE)
   n1 <- 2 * naa + nab
   n2 <- nab + 2 * nbb
   n <- n1 + n2  #n alleles
@@ -363,8 +363,8 @@ HWpops <- function(snpsubset, indsubset, populations=NULL, depthmat = depth.orig
                log(n2) - nab * log(2))  # n is # alleles = 2* n obs
 #  l10p <- -log10(exp(1)) * pchisq(x2, 1, lower.tail = FALSE, log.p = TRUE)
   l10LRT[ipop,] <- -log10(exp(1)) * pchisq(LRT, 1, lower.tail = FALSE, log.p = TRUE)
-  Kdepth <- depth2K(depthmat[indgroup,snpsubset])
-  Kdepth[depthmat[indgroup,snpsubset]==0] <- NA
+  Kdepth <- depth2K(depthmat[indgroup,snpsubset,drop=FALSE])
+  Kdepth[depthmat[indgroup,snpsubset,drop=FALSE]==0] <- NA
   esnphetstar <- 2*p1*p2*(1-2*colMeans(Kdepth,na.rm=TRUE))
   osnphetstar <- nab/(naa + nab + nbb)
   x2star[ipop,] <- colSums(1-2*Kdepth,na.rm=TRUE)*(1-osnphetstar/esnphetstar)^2 # corrected Nov 2018
@@ -547,7 +547,7 @@ calcp <- function(indsubset, pmethod="A") {
 
 GBSsummary <- function() {
  havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
- if(havedepth) cat("depth object already exists - reusing\n")
+ if(havedepth) cat("Warning: depth object already exists - reusing\n")
  if(havedepth & exists("depth.orig")) depth <<- depth.orig
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
@@ -767,7 +767,7 @@ seq2samp <- function(seqIDvec=seqID, splitby="_",nparts=NULL,dfout=FALSE, ...){
  }
 
 
-colourby <- function(colgroup, groupsort=FALSE,maxlight=1,hclpals=character(0)) {
+colourby <- function(colgroup, groupsort=FALSE,maxlight=1,symbset=NULL,hclpals=character(0),pal.upper=1) {
  #maxlight is maximum lightness between 0 and 1
  collabels <- unique(colgroup)
  if(groupsort) collabels <- sort(collabels,na.last=TRUE)
@@ -777,7 +777,7 @@ colourby <- function(colgroup, groupsort=FALSE,maxlight=1,hclpals=character(0)) 
  if(ncol > 8) collist[seq(2,ncol,2)] <-  rgb((t(col2rgb(collist[seq(2,ncol,2)]))+matrix(127,ncol=3,nrow=floor(ncol/2)))/2,maxColorValue = 255)  # darken every 2nd one
  if(npals > 0 & exists("hcl.colors")) {
    for(ipal in 1:npals) {
-    addcols <- hcl.colors(ceiling(ncol/npals),pal=hclpals[ipal])
+    addcols <- hcl.colors(ceiling(ncol/(npals*pal.upper)),pal=hclpals[ipal])[1:ceiling(ncol/npals)]
     if(ipal==1) collist <- addcols else collist <- c(collist,addcols)
     }
    collist <- collist[1:ncol] # trim if needed
@@ -785,7 +785,13 @@ colourby <- function(colgroup, groupsort=FALSE,maxlight=1,hclpals=character(0)) 
  lightness <- colSums( col2rgb(collist))/(3*255)
  collist <- rgb(t(col2rgb(collist) %*% diag(pmin(lightness,rep(maxlight,length(lightness))) / lightness)), maxColorValue = 255)
  sampcol <- collist[match(colgroup,collabels)]
- list(collabels=collabels,collist=collist,sampcol=sampcol)
+ outlist <- list(collabels=collabels,collist=collist,sampcol=sampcol)
+ if (all(as.integer(symbset)==symbset)) {
+  symblist <- suppressWarnings(symbset + rep(0,ncol))  # uses R recycle 
+  sampsymb <- symblist[match(colgroup,collabels)]
+  outlist <- c(outlist,list(symblist=symblist,sampsymb=sampsymb))
+  }
+ outlist
  }
 
 changecol <- function(colobject,colposition,newcolour) {# provide new colours to colourby object
@@ -803,6 +809,7 @@ colkey <- function(colobj, sfx="", srt.lab=0, plotch=16, horiz = TRUE, freq=FALS
  longdim <- 480 + max(0,nlevels-20) * 10
  labtext <- colobj$collabels
  temptab <- table(colobj$sampcol)
+ if( "symblist" %in% names(colobj)) plotch <- colobj$symblist
  if(freq) labtext <- paste(labtext, as.character(temptab[match(colobj$collist,names(temptab))]), sep="\t")
  if(horiz) {
   png(paste0("ColourKey",sfx,".png"),height=240, width = longdim)

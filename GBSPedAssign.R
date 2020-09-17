@@ -1,5 +1,5 @@
 #!/bin/echo Source me don't execute me 
-pedver <- "0.9.3"
+pedver <- "0.9.6"
 cat("GBS-PedAssign for KGD version:",pedver,"\n")
 
 # assume all in pedfile are in the genotype results. To do: remove those that are not
@@ -10,7 +10,7 @@ if (!exists("rel.threshF"))  rel.threshF <- rel.thresh
 if (!exists("rel.threshM"))  rel.threshM <- rel.thresh
 if (!exists("emm.thresh"))   emm.thresh  <- 0.01           # Excess for single parent match
 if (!exists("emm.thresh2"))  emm.thresh2 <- 2*emm.thresh   # Excess for parent-pair match
-if (!exists("emmdiff.thresh2"))  emmdiff.thresh2 <-0  # alternate parent-pair based on emm
+if (!exists("emmdiff.thresh2"))  emmdiff.thresh2 <- 0  # alternate parent-pair based on emm
 if (!exists("inb.thresh"))   inb.thresh  <- 0.2       # par relatedness - 2 * inbreeding
 if (!exists("minr4inb"))     minr4inb    <- NULL      # par relatedness - inbreeding
 if (!exists("boota.thresh")) boota.thresh <- 99       # assignment threshold
@@ -180,19 +180,23 @@ parmatch <- function(partype, Gmatrix) {
   cbind(pedinfo, matchinfo)
 }
 
-bestmatch <- function(ospos, parpos, Guse, partype, matchcriterion = "rel") {
+bestmatch <- function(ospos, parpos, Guse, partype, matchcriterion = "rel", groupname=group) {
   #matchcriterion == "EMM" added later, but made to work exactly the same (will redo EMM for best 2 later)
   if(!matchcriterion == "EMM") matchcriterion <- "rel"
   if (missing(partype)) partype <- "Par"
-  if(length(na.omit(parpos)) > 0 ) {
+  groupsize <- length(na.omit(parpos))
+  if(groupsize > 0 ) {
    diag(Guse) <- -1     # prevent self-parenting
    parchk <- Guse[ospos, parpos,drop=FALSE]
+   maxpos.2 <- rep(NA,nrow(parchk))
    if(matchcriterion == "rel") {
     maxpos <- apply(parchk, 1, which.max)
-    parchktemp <- parchk
-    parchktemp[cbind(1:nrow(parchk), maxpos)] <- -1
-    maxpos.2 <- apply(parchktemp, 1, which.max)
-    rm(parchktemp)
+    if(groupsize > 1) {
+     parchktemp <- parchk
+     parchktemp[cbind(1:nrow(parchk), maxpos)] <- -1
+     maxpos.2 <- apply(parchktemp, 1, which.max)
+     rm(parchktemp)
+     }
     }
    if(matchcriterion == "EMM") {
     offspringID.bm <- pedinfo$IndivID[match(seqID[indsubset][ospos],pedinfo$seqID)]
@@ -201,14 +205,15 @@ bestmatch <- function(ospos, parpos, Guse, partype, matchcriterion = "rel") {
     EMMchk <- with(mm.bm,mmrate-exp.mmrate)
     maxpos <- apply(EMMchk, 1, which.min)
     EMMchk[cbind(1:nrow(EMMchk), maxpos)] <- 1
-    maxpos.2 <- apply(EMMchk, 1, which.min)
+    if(groupsize > 1) maxpos.2 <- apply(EMMchk, 1, which.min)  
     }
    maxrel <- cbind(parchk[cbind(1:nrow(parchk), maxpos)], parchk[cbind(1:nrow(parchk), maxpos.2)])
    rel12 <- Guse[cbind(parpos[maxpos],parpos[maxpos.2])]
    out.df <- data.frame(seqID[indsubset][ospos], seqID[indsubset][parpos[maxpos]], seqID[indsubset][parpos[maxpos.2]], 
              relatedness = maxrel[, 1], rel2nd = maxrel[, 2], rel12=rel12, stringsAsFactors = FALSE)
    } else {
-   cat("Warning: a",partype,"group has no genotyped individuals, includes offspring seqID:",seqID[indsubset][ospos][1],"\n")
+#   cat("Warning: a",partype,"group has no genotyped individuals, includes offspring seqID:",seqID[indsubset][ospos][1],"\n")
+   cat("Warning:",partype,"group",groupname, "has no genotyped individuals\n")
    nprog <- length(ospos)
    out.df <- data.frame(seqID[indsubset][ospos],character(nprog),character(nprog),rep(NA,nprog),rep(NA,nprog),rep(NA,nprog),stringsAsFactors = FALSE)
    }
@@ -314,6 +319,7 @@ groupmatch <- function(Guse, partype) {
   groupIDs <- na.omit(groupIDs)
   groupIDs <- groupIDs[!groupIDs == ""]
   ngroups <- length(groupIDs)
+  nsnpsub <- length(snpsubset)
   if (ngroups > 0) {
     for (g in 1:ngroups) {
       group <- groupIDs[g]
@@ -323,7 +329,7 @@ groupmatch <- function(Guse, partype) {
       ParGroupseqID <- with(pedinfo, seqID[match(ParGroupID, IndivID)])
       offspringpos <- match(offspringseqID, seqID[indsubset])
       parpos <- match(ParGroupseqID, seqID[indsubset])
-      gmatch <- bestmatch(offspringpos, parpos, Guse, partype, matchcriterion = matchmethod)
+      gmatch <- bestmatch(offspringpos, parpos, Guse, partype, matchcriterion = matchmethod, groupname=group)
       if (g == 1) allgmatch <- gmatch else allgmatch <- rbind(allgmatch, gmatch)
       }
     allgmatch$IndivID <- pedinfo$IndivID[match(allgmatch$seqID, pedinfo$seqID)]
@@ -343,7 +349,7 @@ groupmatch <- function(Guse, partype) {
      EMMrate2 <- allgmatch[, paste0("mmrate", partype, "2")] - allgmatch[, paste0("exp.mmrate", partype, "2")] 
      ### bootstrap section
      bootpos <- which(allgmatch[,paste0(partype, "rel")] > rel.thresh & EMMrate < emm.thresh & allgmatch[,paste0(partype, "rel")] - allgmatch[,paste0(partype, "rel2nd")] < boot.thresh)
-     nsnpsub <- length(snpsubset)
+     bootpos <- intersect(bootpos,which(!is.na(allgmatch[, paste0(partype, "Match2nd")])))
      if(length(bootpos) > 0) {
       for(bcase in seq_along(bootpos)) {
        offspringseqID <- allgmatch$seqID[bootpos[bcase]]
@@ -393,10 +399,13 @@ groupmatch <- function(Guse, partype) {
      tempAssign <- rep("Y",nrow(allgmatch))
      if(length(bootpos) > 0) tempAssign[which(allgmatch[,paste0(partype,"Reliability")] < boota.thresh )] <- "B"
      tempAssign[which(EMMrate > emm.thresh)] <- "E"
-     tempAssign[which(allgmatch[, paste0(partype, "rel")] < rel.thresh | is.na(allgmatch[, paste0(partype, "rel")]))] <- "N"
+#     tempAssign[which(allgmatch[, paste0(partype, "rel")] < rel.thresh | is.na(allgmatch[, paste0(partype, "rel")]))] <- "N"  # replace with next 2 for NA
+     tempAssign[which(allgmatch[, paste0(partype, "rel")] < rel.thresh )] <- "N" 
+     tempAssign[is.na(allgmatch[, paste0(partype, "rel")])] <- NA
       # for E assigns, check if the 2nd parent is possible.  
      tempAssign[which(allgmatch[, paste0(partype, "rel2nd")] >= rel.thresh & EMMrate2 < emm.thresh & tempAssign == "E")] <- "A"
      allgmatch[, paste0(partype, "Assign")] <- tempAssign
+     print(addmargins(table(allgmatch[, paste0(partype, "Assign")],useNA="ifany")))
      png(paste0("Best", partype, "Matches.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
       plot(allgmatch[, paste0("mmrate", partype)] ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
           ylab = "Raw mismatch rate",col=fcolo[match(allgmatch$seqID,seqID)], cex=0.8)
@@ -702,7 +711,7 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       plot(EMMrates[,1] ~ EMMrates[,2], main="Excess Mismatch Rates", ylab="Father2, Mother2",xlab="Father1, Mother1", col=fcolo[uo],pch=plotch)
       abline(a = 0,b = 1, col="red")
       dev.off()
-     print( addmargins(table(BothMatches$BothAssign)) )
+     print( addmargins(table(BothMatches$BothAssign, useNA="ifany")) )
      }
     }
   if (exists("groupsfile")) {  ######### find fathers and mothers from possibles ###########
@@ -715,7 +724,7 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       MotherMatches <- groupmatch(eval(parse(text = GCheck)), "Mother")
     write.csv(groupsinfo, "GroupsParentCounts.csv", row.names = FALSE)
     if ("FatherGroup" %in% colnames(pedinfo) & "MotherGroup" %in% colnames(pedinfo)) {
-     BothMatches <- merge(FatherMatches,MotherMatches)
+     BothMatches <- merge(FatherMatches,MotherMatches,all=TRUE)
      if(nrow(BothMatches) > 0) {
       BothMatches <- BothMatches[order(BothMatches$IndivID),]
       mmstats <- mismatch.2par(BothMatches$IndivID, BothMatches$BestFatherMatch, BothMatches$BestMotherMatch)
@@ -749,9 +758,11 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       BothMatches$relF2M2 <- eval(parse(text = GCheck))[cbind(uf,um)]
       uo <- match(BothMatches$seqID,seqID[indsubset])
       BothMatches$Inb <- diag(eval(parse(text = GCheck)))[uo] - 1
-      BothMatches$BothAssign <- assign.rank[pmax(match(BothMatches$FatherAssign,assign.rank),match(BothMatches$MotherAssign,assign.rank))]
+      BothMatches$BothAssign <- assign.rank[pmax(match(BothMatches$FatherAssign,assign.rank),match(BothMatches$MotherAssign,assign.rank),na.rm=TRUE)]
+      BothMatches$BothAssign[BothMatches$FatherAssign=="Y" & is.na(BothMatches$MotherAssign)] <- "F"
+      BothMatches$BothAssign[BothMatches$MotherAssign=="Y" & is.na(BothMatches$FatherAssign)] <- "M"
       EMMrates <- with(BothMatches,cbind(mmrateF2M2-exp.mmrateF2M2,mmrateF1M2-exp.mmrateF1M2,mmrateF2M1-exp.mmrateF2M1,mmrateF1M1-exp.mmrateF1M1))
-      EMMrate.min <- apply(EMMrates, MARGIN=1, min)
+      EMMrate.min <- apply(EMMrates, MARGIN=1, min, na.rm=TRUE)
       if (is.null(minr4inb)) minr4inb <- min(BothMatches$relF1M1) - 0.001
       BothMatches$BothAssign[which(EMMrates[,4] > emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:4])] <- "E"
       BothMatches$BothAssign[EMMrates[,4]-EMMrate.min > emmdiff.thresh2 & EMMrate.min < emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:5]] <- "A"
@@ -764,32 +775,34 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       BothMatches$Alternate <- ""
       Apos <- which(BothMatches$BothAssign %in% c("A","I"))
       for (ipos in Apos) {
-#       altpar = c("F2M2","F1M2","F2M1")[which(EMMrates[ipos,] == EMMrate.min[ipos])]
        altpar <- c("F2M2","F1M2","F2M1")[which.min(EMMrates[ipos,1:3])]
-       altOK <- TRUE
-       if (BothMatches[ipos,paste0("rel",altpar)] - 2 * BothMatches$Inb[ipos] > inb.thresh | EMMrate.min[ipos] > emm.thresh2) altOK <- FALSE
-       if (grepl("F2",altpar)) {
-        if(BothMatches[ipos, "Fatherrel2nd"] < rel.threshF | BothMatches[ipos, "mmrateFather2"] - BothMatches[ipos, "exp.mmrateFather2"] > emm.thresh ) altOK <- FALSE
+       if(length(altpar) > 0) {
+        altOK <- TRUE
+        if (BothMatches[ipos,paste0("rel",altpar)] - 2 * BothMatches$Inb[ipos] > inb.thresh | EMMrate.min[ipos] > emm.thresh2) altOK <- FALSE
+        if (grepl("F2",altpar)) {
+         if(BothMatches[ipos, "Fatherrel2nd"] < rel.threshF | BothMatches[ipos, "mmrateFather2"] - BothMatches[ipos, "exp.mmrateFather2"] > emm.thresh ) altOK <- FALSE
+         }
+        if (grepl("M2",altpar)) {
+         if(BothMatches[ipos, "Motherrel2nd"] < rel.threshM | BothMatches[ipos, "mmrateMother2"] - BothMatches[ipos, "exp.mmrateMother2"] > emm.thresh ) altOK <- FALSE
+         }
+        if(altOK) BothMatches$Alternate[ipos] <- altpar
         }
-       if (grepl("M2",altpar)) {
-        if(BothMatches[ipos, "Motherrel2nd"] < rel.threshM | BothMatches[ipos, "mmrateMother2"] - BothMatches[ipos, "exp.mmrateMother2"] > emm.thresh ) altOK <- FALSE
-        }
-       if(altOK) BothMatches$Alternate[ipos] <- altpar
        }
       write.csv(BothMatches,"BothMatches.csv", row.names = FALSE)
       uo <- match(BothMatches$seqID,seqID)
       trioplots()
       plotch <- assign.pch[match(BothMatches$BothAssign,assign.rank)]
+      upairs <- which(!is.na(plotch))
       png("MMrateBoth.png", width = 640, height = 640, pointsize = cex.pointsize *  15)
-       pairs(with(BothMatches,cbind(mmrateF2M2,mmrateF1M2,mmrateF2M1,mmrateF1M1)),upper.panel=panel.yeqx,lower.panel=NULL,
+       pairs(with(BothMatches[upairs,],cbind(mmrateF2M2,mmrateF1M2,mmrateF2M1,mmrateF1M1)),upper.panel=panel.yeqx,lower.panel=NULL,
                   main="Raw Mismatch Rates", labels=c("Father2,\nMother2","Father1,\nMother2","Father2,\nMother1","Father1,\nMother1"),
-                  col.points=fcolo[uo],pch=plotch)
+                  col.points=fcolo[uo][upairs],pch=plotch[upairs])
        dev.off()
       png("MMrateBothE.png", width = 640, height = 640, pointsize = cex.pointsize *  15)
-       pairs(EMMrates, main="Excess Mismatch Rates", labels=c("Father2,\nMother2","Father1,\nMother2","Father2,\nMother1","Father1,\nMother1"),
-                  upper.panel=panel.yeqx,lower.panel=NULL,col.points=fcolo[uo],pch=plotch)
+       pairs(EMMrates[upairs,], main="Excess Mismatch Rates", labels=c("Father2,\nMother2","Father1,\nMother2","Father2,\nMother1","Father1,\nMother1"),
+                  upper.panel=panel.yeqx,lower.panel=NULL,col.points=fcolo[uo][upairs],pch=plotch[upairs])
        dev.off()
-      print( addmargins(table(BothMatches$BothAssign)) )
+      print( addmargins(table(BothMatches$BothAssign, useNA="ifany")) )
       }
      }
   }
