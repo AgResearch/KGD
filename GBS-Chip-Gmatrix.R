@@ -1598,7 +1598,7 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
   for(iG in 2:nG)  gcompare <- cbind(gcompare,diag(Glist[[iG]])[match(allID,IDlist[[iG]])])
   cat("Diagonals\n")
   print(regoutput())
-  png(paste0("Gcompare-", plotname, "-diag.png"), width = 960, height = 960, pointsize = 18)
+  png(paste0("Gcompare-", plotname, "-diag.png"), width = 960, height = 960, pointsize = 18) # png(paste0("Gcompare-", plotname, "-diag.png"),width = 4, height = 4, units = 'in', res = 300, pointsize = 7)
    if (nG>2)    pairs(gcompare,labels=Gnames,upper.panel=regpanel,lower.panel=plotpanel,main="Diagonal comparisons", nvars=nG, ...) else {
     plot(gcompare,xlab=Gnames[1],ylab=Gnames[2],main="Diagonal comparisons", ...)
     abline(a=0,b=1,col="red",lwd=2)
@@ -1621,7 +1621,7 @@ GCompare <- function(Glist,IDlist,Gnames = paste0("G.",1:length(Glist)), plotnam
   for(iG in 2:nG)  gcompare <- cbind(gcompare,upper.vec(Glist[[iG]][match(allID,IDlist[[iG]]),match(allID,IDlist[[iG]])]))
   cat("Off-diagonals\n")
   print(regoutput())
-  png(paste0("Gcompare-", plotname, "-offdiag.png"), width = 960, height = 960, pointsize = 18)
+  png(paste0("Gcompare-", plotname, "-offdiag.png"), width = 960, height = 960, pointsize = 18) # png(paste0("Gcompare-", plotname, "-offdiag.png"), width = 4, height = 4, units = 'in', res = 300, pointsize = 7)
    if (nG>2) pairs(gcompare,labels=Gnames,upper.panel=regpanel,lower.panel=plotpanel,main="Off-diagonal comparisons", nvars=nG, ...) else {
     plot(gcompare,xlab=Gnames[1],ylab=Gnames[2],main="Off-diagonal comparisons", ...)
     abline(a=0,b=1,col="red",lwd=2)
