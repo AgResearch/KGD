@@ -1,3 +1,6 @@
+PopGenver <- "0.9.7"
+cat("GBS-PopGen for KGD version:",PopGenver,"\n")
+
 heterozygosity <- function(indsubsetgf=1:nind,snpsubsetgf=1:nsnps,maxiter=100,convtol=0.001){
  nsnpsgf <- length(snpsubsetgf)
  nindgf <- length(indsubsetgf)
@@ -61,7 +64,7 @@ Fst.GBS0 <- function(snpsubset, indsubset, populations) {
    chiresult
    }
 
-Fst.GBS <- function(snpsubset, indsubset, populations, varadj=0) {
+Fst.GBS <- function(snpsubset, indsubset, populations, varadj=0, SNPtest=FALSE) {
   #use varadj=1 to get Fst as Weir p166, varadj=0 for usual Fst
   if (missing(snpsubset))   snpsubset <- 1:nsnps
   if (missing(indsubset))   indsubset <- 1:nind
@@ -77,31 +80,37 @@ Fst.GBS <- function(snpsubset, indsubset, populations, varadj=0) {
   X2results <- apply(rbind(aX2,snppopeffn),MARGIN=2,chisq.adj,y=rep(populations[indsubset],2))
   effnuma <- colSums(2*(1-depth2K(depth.orig[indsubset, snpsubset,drop=FALSE])))  # 2(1-K)
   Fst.results[usnp] <- npops * X2results / (effnuma * (npops - varadj))
-  cat("Fst Mean:",mean(Fst.results,na.rm=TRUE),"Median:",median(Fst.results,na.rm=TRUE),"\n")
+  pvalue <- pchisq(X2results,df=npops-1,lower.tail=FALSE) 
+  cat("Fst Mean:",mean(Fst.results,na.rm=TRUE),"Median:",median(Fst.results,na.rm=TRUE),"p-value:",mean(pvalue,na.rm=TRUE),"\n")
+  if(SNPtest) Fst.results <- list(Fst=Fst.results, pvalue=pvalue)
   Fst.results
 }
 
 
-Fst.GBS.pairwise <- function(snpsubset, indsubset, populations,sortlevels=TRUE, ...) {
+Fst.GBS.pairwise <- function(snpsubset, indsubset, populations,sortlevels=TRUE, SNPtest=FALSE, ...) {
  if (missing(snpsubset))   snpsubset <- 1:nsnps
  if (missing(indsubset))   indsubset <- 1:nind
  popnames <- unique(populations[indsubset])
  if(sortlevels) popnames <- sort(popnames)
  npops <- length(popnames)
  Fst.results <- array(dim=c(npops,npops,length(snpsubset)))
+ if(SNPtest) pvalue <- Fst.results
  Fst.means <- Fst.medians <- array(dim=c(npops,npops),dimnames=list(popnames,popnames))
   for (ipop in 1:(npops-1)) {
   indsubseti <- indsubset[which(populations[indsubset] == popnames[ipop])]
   for (jpop in (ipop+1):npops) {
    indsubsetj <- indsubset[which(populations[indsubset] == popnames[jpop])]
-   Fst.results[ipop,jpop,] <- Fst.GBS(snpsubset,c(indsubseti,indsubsetj),populations, ...)
+   Fsttemp <- Fst.GBS(snpsubset,c(indsubseti,indsubsetj),populations, SNPtest = SNPtest, ...)
+   if(SNPtest) Fst.results[ipop,jpop,] <- Fsttemp$Fst else Fst.results[ipop,jpop,] <- Fsttemp
+   if(SNPtest) pvalue[ipop,jpop,] <- Fsttemp$pvalue
    Fst.means[ipop,jpop] <- mean(Fst.results[ipop,jpop,],na.rm=TRUE)
    Fst.medians[ipop,jpop] <- median(Fst.results[ipop,jpop,],na.rm=TRUE)
    }
   }
  cat("Pairwise Fst Means\n"); print(Fst.means[-npops,-1])
  cat("Pairwise Fst Medians\n");print(Fst.medians[-npops,-1])
- Fst.results
+ if(SNPtest) 
+ Fst.results <- list(Fst=Fst.results, pvalue=pvalue)
  }
 
 
@@ -161,17 +170,23 @@ popmaf <- function(snpsubset, indsubset, populations=NULL, subpopulations=NULL, 
  }
 
 
-manhatplot <- function(value, chrom, pos, plotname, qdistn=qunif, keyrot=0, ...) {
+manhatplot <- function(value, chrom, pos, plotname, qdistn=qunif, keyrot=0, symsize=0.8, legendm = NULL, ...) {
  chromcol <- colourby(chrom)
  colkey(chromcol,"chrom",srt=keyrot)
  plotord <- order(chrom,pos)
+ valuetext <- gsub("[^[:alnum:]]", ".", deparse(substitute(value)))
+ symsize0 <- symsize
+ if(length(symsize)==length(value)) symsize <- symsize[plotord]
  png(paste0(plotname,"-Manhat.png"),width=1200)
-  plot(value[plotord], col=chromcol$sampcol[plotord],xlab="Position",ylab=substitute(value),cex=0.8, xaxt="n")
+  plot(value[plotord], col=chromcol$sampcol[plotord],xlab="Position",ylab=valuetext,cex=symsize, xaxt="n")
+  if(!is.null(legendm)) legendm()
   dev.off()
  png(paste0(plotname,"-QQ.png"))
-  qqplot(qdistn(ppoints(length(value)),...), y=value, xlab="Theoretical quantiles", ylab=paste0(substitute(value)," quantiles"), 
+  if(length(symsize)==length(value)) symsize <- symsize0[order(value)]
+  qqplot(qdistn(ppoints(length(value)),...), y=value, xlab="Theoretical quantiles", ylab=paste(valuetext,"quantiles"), cex=symsize,
          sub="Line for mid 98% of values", col=chromcol$sampcol[order(value)])
   qqline(value,col=2, distribution = function(p) qdistn(p, ...),prob=c(0.01,0.99))
+  if(!is.null(legendm)) legendm()
   dev.off()
  }
 
@@ -199,7 +214,7 @@ manhatplot <- function(value, chrom, pos, plotname, qdistn=qunif, keyrot=0, ...)
 # based on T Bilton code
 snpselection <- function(chromosome,position,nsnpperchrom=100,seltype="centre",randseed=NULL, snpsubset,chromuse) {
  #seltype is centre, even or random
- if (missing(snpsubset))   snpsubset <- 1:nsnps
+ if (missing(snpsubset))   snpsubset <- 1:length(chromosome)
  if (missing(chromuse)) chromuse <- unique(chromosome)
  if(seltype=="center") seltype <- "centre"
  usnp <- intersect(snpsubset, which(chromosome %in% chromuse))

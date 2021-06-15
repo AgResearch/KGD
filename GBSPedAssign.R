@@ -1,5 +1,5 @@
 #!/bin/echo Source me don't execute me 
-pedver <- "0.9.6"
+pedver <- "0.9.7"
 cat("GBS-PedAssign for KGD version:",pedver,"\n")
 
 # assume all in pedfile are in the genotype results. To do: remove those that are not
@@ -42,6 +42,10 @@ if(length(indsubset) != nrow(eval(parse(text = GCheck)))) {
  OK4ped <- FALSE
  cat("Number of individuals",length(indsubset),"does not match G matrix",nrow(eval(parse(text = GCheck))),"\n")
  } 
+if (exists("pedfile")) if(!file.exists(pedfile)) {
+ OK4ped <- FALSE
+ cat("Warning: Pedigree file", pedfile, "not found\n")
+ }
 
 panel.yeqx <- function(x,y,col.points="black",col.line="red",...){   #panel function for pairs with identity line added
     points(x,y,col=col.points,...)
@@ -405,6 +409,7 @@ groupmatch <- function(Guse, partype) {
       # for E assigns, check if the 2nd parent is possible.  
      tempAssign[which(allgmatch[, paste0(partype, "rel2nd")] >= rel.thresh & EMMrate2 < emm.thresh & tempAssign == "E")] <- "A"
      allgmatch[, paste0(partype, "Assign")] <- tempAssign
+     cat("\nSummary of",partype,"Assignments\n")
      print(addmargins(table(allgmatch[, paste0(partype, "Assign")],useNA="ifany")))
      png(paste0("Best", partype, "Matches.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
       plot(allgmatch[, paste0("mmrate", partype)] ~ allgmatch[, paste0(partype, "rel")], main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
@@ -662,6 +667,11 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
    assign.rank <- c("Y","I","B","A","E","F","M","N")
 #   assign.pch <- c(16,2,6,1,15,13,13,4)
    assign.pch <- c(16,2,6,1,15,70,77,4)
+
+  if (exists("matesfile")) if(!file.exists(matesfile)) {
+   cat("Warning: Mates file", matesfile, "not found\n")
+   rm(matesfile)
+   }
   if (exists("matesfile")) {  ######### check for matching mating pair ###########
     suppressWarnings(rm(groupsfile)) # dont use groups
     matesinfo <- read.csv(matesfile, stringsAsFactors = FALSE, colClasses=(MatesGroup="character"))
@@ -711,9 +721,14 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       plot(EMMrates[,1] ~ EMMrates[,2], main="Excess Mismatch Rates", ylab="Father2, Mother2",xlab="Father1, Mother1", col=fcolo[uo],pch=plotch)
       abline(a = 0,b = 1, col="red")
       dev.off()
+     cat("\nSummary of joint Assignments\n")
      print( addmargins(table(BothMatches$BothAssign, useNA="ifany")) )
      }
     }
+  if (exists("groupsfile")) if(!file.exists(groupsfile)) {
+   cat("Warning: Groups file", groupsfile, "not found\n")
+   rm(groupsfile)
+   }
   if (exists("groupsfile")) {  ######### find fathers and mothers from possibles ###########
     groupsinfo <- read.csv(groupsfile, stringsAsFactors = FALSE, colClasses=(ParGroup="character"))
     groupsinfo <- groupsinfo[!duplicated(groupsinfo),]  # remove row duplicates
@@ -802,6 +817,7 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
        pairs(EMMrates[upairs,], main="Excess Mismatch Rates", labels=c("Father2,\nMother2","Father1,\nMother2","Father2,\nMother1","Father1,\nMother1"),
                   upper.panel=panel.yeqx,lower.panel=NULL,col.points=fcolo[uo][upairs],pch=plotch[upairs])
        dev.off()
+      cat("\nSummary of joint Assignments\n")
       print( addmargins(table(BothMatches$BothAssign, useNA="ifany")) )
       }
      }
