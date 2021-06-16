@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "0.9.7"
+KGDver <- "0.9.8"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
@@ -327,6 +327,35 @@ readTassel <- function(genofilefn0 = genofile, usedt="recommended") {
   invisible(NULL)
 }
 
+parkGBS <- function() {
+ #refalleles altalleles
+ parkeddata <- list(nsnps=nsnps,SNP_Names=SNP_Names, seqID = seqID, nind=nind, alleles = alleles)
+ }
+
+joinGBS <- function(join1, join2=NULL, replace=TRUE, uniqueSNPs=FALSE) {
+ if(is.null(join2)) join2 <- parkGBS()
+ cat("Joining set 1",join1$nind,"ind x",join1$nsnps,"SNPs, set 2",join2$nind,"ind x",join2$nsnps,"SNPs\n")
+ if(uniqueSNPs) join1$SNP_Names <- make.names(c(join2$SNP_Names,join1$SNP_Names),unique=TRUE)[join2$nsnps+(1:join1$nsnps)]
+ SNP_Names <- unique( c(join1$SNP_Names,join2$SNP_Names))
+ nsnps <- length(SNP_Names)
+ nind <- join1$nind+join2$nind
+ seqID <- c(join1$seqID,join2$seqID)
+ snppos1 <- match(join1$SNP_Names,SNP_Names)
+ snppos2 <- match(join2$SNP_Names,SNP_Names)
+ alleles <- matrix(0,nrow=nind,ncol=2*nsnps)
+ alleles[1:join1$nind,as.vector(rbind(snppos1*2-1,snppos1*2))] <- join1$alleles
+ alleles[join1$nind+(1:join2$nind),as.vector(rbind(snppos2*2-1,snppos2*2))] <- join2$alleles
+ if(any(duplicated(seqID))) cat("Not merging",sum(duplicated(seqID)),"samples. Consider using replace=TRUE and then mergeSamples(seqID)\n")
+ # scoping problems if mergeSamples used inside this function
+ outobj <- NULL
+ if(replace) {
+  nsnps <<- nsnps; SNP_Names <<- SNP_Names; seqID <<- seqID; nind <<- nind; alleles <<- alleles
+  } else {
+  outobj <- list(nsnps=nsnps,SNP_Names=SNP_Names, seqID = seqID, nind=nind, alleles = alleles)
+  }
+ invisible(outobj)
+ }
+
 samp.remove <- function (samppos=NULL, keep=FALSE) {
  if(keep) samppos <- setdiff(1:nind,samppos)
  if(length(samppos)>0) {
@@ -352,6 +381,8 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
    if(exists("genon")) genon <<- genon[, -snppos]
    if(exists("chrom")) chrom <<- chrom[-snppos]
    if(exists("pos")) pos <<- pos[-snppos]
+   if(exists("refalleles")) refalleles <<- refalleles[-snppos]
+   if(exists("altalleles")) altalleles <<- altalleles[-snppos]
    if (exists("alleles")) {
      uremovea <- sort(c(2 * snppos, 2 * snppos - 1))  # allele positions
      if(exists("RAcounts")) RAcounts <<- RAcounts[-snppos, ]
@@ -961,7 +992,7 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
  posCstats
  }
 
-mergeSamples <- function(mergeIDs, indsubset) {  
+mergeSamples <- function(mergeIDs, indsubset, replace=FALSE) {  
  # doesn't do samples0, so cant do G3 
  if (missing(indsubset)) indsubset <- 1:nind
  mergeIDs <- mergeIDs[indsubset]
@@ -996,6 +1027,11 @@ mergeSamples <- function(mergeIDs, indsubset) {
  if(hasg) mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
  if(alleles.keep & hasg) mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth.orig = depth.m, alleles=alleles.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
  if(!hasg) mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, alleles=alleles.m, nmerged=nseq)
+ if(replace) {
+  nind <<- nind.m; seqID <<- seqID.m; mergelist$nind <- NULL; mergelist$seqID <- NULL
+  if(hasg) {genon <<- genon.m; depth.orig <<- depth.m; depth <<- depth.m; sampdepth <<- sampdepth.m; snpdepth <<- snpdepth.m; pg <<- pg.m; mergelist$genon <- mergelist$depth.orig <- mergelist$depth <- mergelist$pg <- NULL}
+  if(alleles.keep | !hasg) {alleles <<- alleles.m; mergelist$alleles <- NULL}
+  }
  mergelist
  }
 
