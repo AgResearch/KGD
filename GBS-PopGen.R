@@ -1,11 +1,11 @@
-PopGenver <- "0.9.7"
+PopGenver <- "1.0.0"
 cat("GBS-PopGen for KGD version:",PopGenver,"\n")
 
 heterozygosity <- function(indsubsetgf=1:nind,snpsubsetgf=1:nsnps,maxiter=100,convtol=0.001){
  nsnpsgf <- length(snpsubsetgf)
  nindgf <- length(indsubsetgf)
  genongf <- genon[indsubsetgf,snpsubsetgf,drop=FALSE]
- depth.use <- depth.orig[indsubsetgf,snpsubsetgf,drop=FALSE]
+ depth.use <- depth[indsubsetgf,snpsubsetgf,drop=FALSE]
  depth.use[depth.use==0] <- NA # dont want to average over obs with depth 0
  obsgfreq <- cbind(colSums(genongf==0,na.rm=TRUE),colSums(genongf==1,na.rm=TRUE),colSums(genongf==2,na.rm=TRUE))/colSums(!is.na(genongf))
  obshet <- mean(obsgfreq[,2],na.rm=TRUE)
@@ -31,7 +31,8 @@ heterozygosity <- function(indsubsetgf=1:nind,snpsubsetgf=1:nsnps,maxiter=100,co
    }
   ohet[isnp] <- pnew[2]
   }
- data.frame(ohetstar=obshet, ehetstar=ehetstar, ohet=mean(ohet, na.rm=TRUE),ohet2=ohet2, ehet=ehettrue)
+ effnumind <- mean(colSums(1-depth2K(depth[indsubsetgf, snpsubsetgf])))
+ data.frame(neff = effnumind, ohetstar=obshet, ehetstar=ehetstar, ohet=mean(ohet, na.rm=TRUE),ohet2=ohet2, ehet=ehettrue)
 }
 
 Fst.GBS0 <- function(snpsubset, indsubset, populations) {
@@ -39,13 +40,12 @@ Fst.GBS0 <- function(snpsubset, indsubset, populations) {
  if (missing(indsubset))   indsubset <- 1:nind
  npops <- length(unique(populations[indsubset]))
  Fst.results <- numeric(length(snpsubset))
- snppopdepth <- rowsum(depth.orig[indsubset, snpsubset],populations[indsubset])
+ snppopdepth <- rowsum(depth[indsubset, snpsubset],populations[indsubset])
  usnp <- which(!apply(snppopdepth,MARGIN=2,min) == 0)
  snpsubset <- snpsubset[usnp]
  aX2 <-  rbind(round(genon[indsubset,snpsubset]/2),ceiling(genon[indsubset,snpsubset]/2))
  X2results <- apply(aX2,MARGIN=2,function(x,y) chisq.test(table(x,y))$statistic,y=rep(populations[indsubset],2))
-# effnuma <- colSums(2*(1-depth2K(depthsub <- depth.orig[indsubset, snpsubset])))  # 2(1-K)
- effnuma <- colSums(2*(1-depth2K(depth.orig[indsubset, snpsubset])))  # 2(1-K)
+ effnuma <- colSums(2*(1-depth2K(depth[indsubset, snpsubset])))  # 2(1-K)
  Fst.results[usnp] <- npops * X2results / (effnuma * (npops - 1))
  Fst.results
  }
@@ -69,18 +69,18 @@ Fst.GBS <- function(snpsubset, indsubset, populations, varadj=0, SNPtest=FALSE) 
   if (missing(snpsubset))   snpsubset <- 1:nsnps
   if (missing(indsubset))   indsubset <- 1:nind
   npops <- length(unique(populations[indsubset]))
-  Fst.results <- NA*numeric(length(snpsubset))
-  snppopdepth <- rowsum(depth.orig[indsubset, snpsubset,drop=FALSE],populations[indsubset])
+  Fst.results <- pvalue <- NA*numeric(length(snpsubset))
+  snppopdepth <- rowsum(depth[indsubset, snpsubset,drop=FALSE],populations[indsubset])
   pgsub <- colMeans(genon[indsubset,snpsubset,drop=FALSE],na.rm=TRUE) /2
   usnp <- which(!apply(snppopdepth,MARGIN=2,min) == 0 & pgsub > 0 & pgsub < 1 )
   snpsubset <- snpsubset[usnp]
   aX2 <-  rbind(round(genon[indsubset,snpsubset,drop=FALSE]/2),ceiling(genon[indsubset,snpsubset,drop=FALSE]/2))
-  effnuma1 <- 2*(1-depth2K(depth.orig[indsubset, snpsubset,drop=FALSE]))  # 2(1-K)
+  effnuma1 <- 2*(1-depth2K(depth[indsubset, snpsubset,drop=FALSE]))  # 2(1-K)
   snppopeffn <- rowsum(effnuma1,populations[indsubset])  # effective number reads popn x snps
   X2results <- apply(rbind(aX2,snppopeffn),MARGIN=2,chisq.adj,y=rep(populations[indsubset],2))
-  effnuma <- colSums(2*(1-depth2K(depth.orig[indsubset, snpsubset,drop=FALSE])))  # 2(1-K)
+  effnuma <- colSums(2*(1-depth2K(depth[indsubset, snpsubset,drop=FALSE])))  # 2(1-K)
   Fst.results[usnp] <- npops * X2results / (effnuma * (npops - varadj))
-  pvalue <- pchisq(X2results,df=npops-1,lower.tail=FALSE) 
+  pvalue[usnp] <- pchisq(X2results,df=npops-1,lower.tail=FALSE) 
   cat("Fst Mean:",mean(Fst.results,na.rm=TRUE),"Median:",median(Fst.results,na.rm=TRUE),"p-value:",mean(pvalue,na.rm=TRUE),"\n")
   if(SNPtest) Fst.results <- list(Fst=Fst.results, pvalue=pvalue)
   Fst.results
@@ -95,7 +95,7 @@ Fst.GBS.pairwise <- function(snpsubset, indsubset, populations,sortlevels=TRUE, 
  npops <- length(popnames)
  Fst.results <- array(dim=c(npops,npops,length(snpsubset)))
  if(SNPtest) pvalue <- Fst.results
- Fst.means <- Fst.medians <- array(dim=c(npops,npops),dimnames=list(popnames,popnames))
+ Fst.means <- Fst.medians <- pvalue.means <- array(dim=c(npops,npops),dimnames=list(popnames,popnames))
   for (ipop in 1:(npops-1)) {
   indsubseti <- indsubset[which(populations[indsubset] == popnames[ipop])]
   for (jpop in (ipop+1):npops) {
@@ -105,12 +105,14 @@ Fst.GBS.pairwise <- function(snpsubset, indsubset, populations,sortlevels=TRUE, 
    if(SNPtest) pvalue[ipop,jpop,] <- Fsttemp$pvalue
    Fst.means[ipop,jpop] <- mean(Fst.results[ipop,jpop,],na.rm=TRUE)
    Fst.medians[ipop,jpop] <- median(Fst.results[ipop,jpop,],na.rm=TRUE)
+   if(SNPtest) pvalue.means[ipop,jpop] <- mean(pvalue[ipop,jpop,],na.rm=TRUE)
    }
   }
  cat("Pairwise Fst Means\n"); print(Fst.means[-npops,-1])
  cat("Pairwise Fst Medians\n");print(Fst.medians[-npops,-1])
- if(SNPtest) 
- Fst.results <- list(Fst=Fst.results, pvalue=pvalue)
+ if(SNPtest)  cat("Pairwise p-value Means\n"); print(pvalue.means[-npops,-1])
+ if(SNPtest) Fst.results <- list(Fst=Fst.results, pvalue=pvalue)
+ Fst.results
  }
 
 
@@ -169,6 +171,21 @@ popmaf <- function(snpsubset, indsubset, populations=NULL, subpopulations=NULL, 
   }
  }
 
+
+popG <- function(Guse,populations) {
+ #average a G matrix by populations (without self-rel) + mean self-rel by populations
+ Xpops <- model.matrix(~populations -1)
+ poptext <- names(attr(Xtest,"contrast"))
+ popnames <- sub(poptext,"",colnames(Xtest),fixed=TRUE)
+ colnames(Xpops) <-  popnames
+ npops <- colSums(Xpops)
+ popG <- t(Xpops %*% diag(1/npops)) %*% Guse %*% Xpops %*% diag(1/npops)
+ popSelf <- t(Xpops %*% diag(1/npops)) %*% diag(Guse)
+ diag(popG) <- (diag(popG) * npops - popSelf) / (npops - 1)
+ colnames(popG) <- rownames(popG) <-  rownames(popSelf) <- colnames(Xpops)
+ colnames(popSelf) <- "Inbreeding"
+ list(G=popG, Inb = popSelf-1)
+ }
 
 manhatplot <- function(value, chrom, pos, plotname, qdistn=qunif, keyrot=0, symsize=0.8, legendm = NULL, ...) {
  chromcol <- colourby(chrom)
@@ -285,3 +302,5 @@ Nefromr2 <- function(r2auto,nLD, alpha=1, weighted=FALSE,minN=1) {
  beta <- 2; Neauto.med.adj.b2 <- (1/(median(r2auto,na.rm=TRUE) -1/(beta*meanN)) - alpha) /2 
  data.frame(n=meanN,Neauto,Neauto.adj.b1,Neauto.adj.b2,Neauto.med,Neauto.med.adj.b1,Neauto.med.adj.b2)
  }
+
+

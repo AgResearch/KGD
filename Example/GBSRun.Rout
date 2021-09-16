@@ -1,6 +1,6 @@
 
-R version 3.0.1 (2013-05-16) -- "Good Sport"
-Copyright (C) 2013 The R Foundation for Statistical Computing
+R version 3.6.0 (2019-04-26) -- "Planting of a Tree"
+Copyright (C) 2019 The R Foundation for Statistical Computing
 Platform: x86_64-redhat-linux-gnu (64-bit)
 
 R is free software and comes with ABSOLUTELY NO WARRANTY.
@@ -19,62 +19,103 @@ Type 'q()' to quit R.
 
 > genofile <- "HapMap.hmc.txt.gz"
 > 
-> source("<source directory>/GBS-Chip-Gmatrix.R")
-Read 102 items
-Read 14709 records
+> #source("<source directory>/GBS-Chip-Gmatrix.R")
+> source("../../GBS-Chip-Gmatrix.R")
+KGD version: 1.0.0 Pre-release 1 
+Loading required package: Rcpp
+Loading C++ functions: /home/doddsk/GBS/Code/GBS-Rcpp-functions.cpp 
+Data file has 96 samples 
+Data file has 14709 SNPs 
+0 SNPs with MAF=0 or depth < 0.01 removed
 Analysing 96 individuals and 14709 SNPs
-Proportion of missing genotypes:  0.3640826
-Mean sample depth: 9.281431
+Proportion of missing genotypes:  0.3640826 Callrate: 0.6359174 
+Mean sample depth: 9.281431 
 > Gfull <- calcG()
-Calculating G matrix, analysis code:
-# SNPs:  14709
-# individuals:  96
-Mean co-call rate (for sample pairs): 0.4780837
-Min  co-call rate (for sample pairs): 0.002719423
-Proportion of missing genotypes:  0.3640826
-Mean sample depth: 9.281431
-Mean self-relatedness (G5 diagonal): 1.215244
+Calculating G matrix, analysis code:  
+Using global allele frequencies
+# SNPs:  14709 
+# individuals:  96 
+Mean co-call rate (for sample pairs): 0.4780837 
+Min  co-call rate (for sample pairs): 0.002719423 
+Proportion of missing genotypes:  0.3640826 Callrate: 0.6359174 
+Mean sample depth: 9.281431 
+Mean self-relatedness (G5 diagonal): 1.215244 
+Self-Rel vs log(depth) regression = -0.0928 p = 3.86e-14 (min depth = 0.1)
 > GHWdgm.05 <- calcG(which(HWdis > -0.05),"HWdgm.05", npc=4)  # recalculate using Hardy-Weinberg disequilibrium cut-off at -0.05
-Calculating G matrix, analysis code: HWdgm.05
-# SNPs:  11500
-# individuals:  96
-Mean co-call rate (for sample pairs): 0.3688646
-Min  co-call rate (for sample pairs): 8.695652e-05
-Proportion of missing genotypes:  0.445558
-Mean sample depth: 4.348901
-Mean self-relatedness (G5 diagonal): 1.577778
-minimum eigenvalue:  4.320261e-38
->
+Calculating G matrix, analysis code: HWdgm.05 
+Using global allele frequencies
+# SNPs:  11500 
+# individuals:  96 
+Mean co-call rate (for sample pairs): 0.3688646 
+Min  co-call rate (for sample pairs): 8.695652e-05 
+Proportion of missing genotypes:  0.445558 Callrate: 0.554442 
+Mean sample depth: 4.348901 
+Mean self-relatedness (G5 diagonal): 1.577778 
+Loading required package: parallelDist
+Using parallelDist function in heatmap
+Self-Rel vs log(depth) regression = -0.117 p = 4.81e-12 (min depth = 0.1)
+minimum eigenvalue:  4.608917e-36 
+first 8 eigenvalues: 0.2184196 0.1793586 0.1293921 0.06300112 0.02642587 0.01990788 0.01812084 0.0138231 
+> 
 > pedfile <- "Ped-GBS.csv"
 > groupsfile <- "Ped-Groups.csv"
->
+> 
 > rel.thresh <- 0.2
+> emm.thresh <- 0.075  # to make results same as before emm used (to match original example)
 > GCheck <- "GHWdgm.05$G5"
-> source("<source directory>/GBSPedAssign.R")
+> #source("<source directory>/GBSPedAssign.R")
+> source("../../GBSPedAssign.R")
+GBS-PedAssign for KGD version: 1.0.0 Pre-release 
 Parentage parameter settings
 ----------------------------
- rel.thresh      0.2
- emm.thresh      0.01
- emm.thresh2     0.02
- emmdiff.thresh2         0
- inb.thresh      0.2  (parent relatedness v inbreeding)
- boota.thresh    99
- depth.min       0  (for bootstrapping)
- depth.max       Inf  (for bootstrapping)
- nboot           1000
- boot.thresh     0.05  (relatedness difference to invoke bootstrapping)
+ rel.threshF	 0.2 
+ rel.threshM	 0.2 
+ emm.thresh	 0.075 
+ emm.thresh2	 0.15 
+ emmdiff.thresh2 0 
+ mindepth.mm	 1 
+ inb.thresh	 0.2 (parent relatedness v inbreeding) 
+ minr4inb	 
+ boota.thresh	 99 
+ depth.min	 0 (for bootstrapping) 
+ depth.max	 Inf (for bootstrapping) 
+ nboot		 1000 
+ boot.thresh	 0.05 (relatedness difference to invoke bootstrapping) 
+ matchmethod	 rel 
 56 matches out of 78 Father comparisons: 71.8 %
-Mean relatedness for Father matches 0.26
-Mean relatedness for Father non-matches -0.0238
+Mean relatedness for Father matches 0.26 
+Mean relatedness for Father non-matches -0.0238 
 51 matches out of 78 Mother comparisons: 65.4 %
-Mean relatedness for Mother matches 0.298
-Mean relatedness for Mother non-matches 0.0181
+Mean relatedness for Mother matches 0.298 
+Mean relatedness for Mother non-matches 0.0181 
 Mean relatedness for full-sib families (as given)
   famfathers fammothers noffspring   meanrel
 1         23          1         17 0.2286663
 2         47         24         18 0.2653806
 3         71         48         18 0.2921438
 4         94         72         17 0.2499820
-Mean relatedness within all full-sib families 0.2596066
-Mean relatedness between individuals in full-sib families with different parents -0.04724106
+Mean relatedness within all full-sib families 0.2596066 
+Mean relatedness between individuals in full-sib families with different parents -0.08722714 
 
+Summary of Father Assignments
+
+  B   N   Y Sum 
+  1  13   3  17 
+
+Summary of Mother Assignments
+
+  N   Y Sum 
+ 16   1  17 
+
+Summary of joint Assignments
+
+  B   F   M   N Sum 
+  1   3   1  29  34 
+There were 34 warnings (use warnings() to see them)
+> 
+> #G5 <- GHWdgm.05$G5
+> #save(G5,seqID,file="G5.RData")
+> 
+> proc.time()
+   user  system elapsed 
+  9.485   0.467  12.095 
