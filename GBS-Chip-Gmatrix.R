@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "1.0.0"
+KGDver <- "1.0.1"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
@@ -1690,7 +1690,7 @@ calcGdiag <- function(snpsubset, puse, indsubset, depth.min = 0, depth.max = Inf
   GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*Kdepth))/(1 - 2*Kdepth))/div0
 }
 
-ssdInb <- function(dmodel="bb", dpar=Inf, Inbtarget,snpsubset,puse,indsubset,quiet=FALSE, quieti=TRUE) {  
+ssdInb <- function(dpar=Inf, dmodel="bb", Inbtarget,snpsubset,puse,indsubset,quiet=FALSE, quieti=TRUE) {  
  if (missing(snpsubset))   snpsubset <- 1:nsnps
  if (missing(indsubset))   indsubset <- 1:nind
  if (missing(puse))        puse <- p
