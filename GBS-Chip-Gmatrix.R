@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "1.0.1"
+KGDver <- "1.0.2"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
@@ -1234,7 +1234,7 @@ plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,ne
   axis(1,at=(0:(ncol(zmat)-1))/(max(2,ncol(zmat))-1),labels=colnames(zmat),cex.axis=0.8)
   axis(2,at=(0:(nrow(zmat)-1))/(max(2,nrow(zmat))-1),labels=rownames(zmat),cex.axis=0.8)
   if(!missing(neginfo)) markneg(negcol=negcol)
-  addlegend(plotvar=plotvar, main=vardesc)
+  addlegend(plotvar=as.numeric(zmat), main=vardesc)
   dev.off()
 
  if("subplate" %in% infonames) {
@@ -1265,6 +1265,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   if (missing(snpsubset))   snpsubset <- 1:nsnps
   if (missing(indsubset))   indsubset <- 1:nind
   if (missing(puse))        puse <- p
+  d4i <- 1.001  # min depth to use in inbreeding calcs. Anything in (1,2] OK for normal data, but a low value used in case effective depth (non-integer) being used
   pusena <- which(is.na(puse))
   npusena <- length(intersect(pusena,snpsubset))
   if(npusena > 0 ) cat("Warning:", npusena,"SNPs with NA allele frequencies were removed\n")
@@ -1325,7 +1326,6 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
   depthsub <- depth[indsubset, snpsubset]
-####  if(min(depth) < 2) depth[depth < 2] <- 1.1        # in case got here without executing this
   # puse - determine whether global or indiv specifc
   if(is.matrix(puse)) {  # allows matrix puse to be specified relative to all or subsetted data
    cat("Using individual allele frequencies\n")
@@ -1433,23 +1433,23 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   P0 <- puse
   P1 <- 1 - P0
   if (have_rcpp) {
-    rcpp_assignP0P1Genon01(P0, P1, genon01, usegeno, depthsub, nThreads)
+    rcpp_assignP0P1Genon01(P0, P1, genon01, usegeno, depthsub, d4i, nThreads)
   }
   else {
-    genon01[depth[indsubset, snpsubset] < 2] <- 0
-    P0[!usegeno | depthsub < 2] <- 0
-    P1[!usegeno | depthsub < 2] <- 0
+    genon01[depth[indsubset, snpsubset] < d4i] <- 0
+    P0[!usegeno | depthsub < d4i] <- 0
+    P1[!usegeno | depthsub < d4i] <- 0
   }
 
 #  div0 <- 2 * diag(tcrossprod(P0, P1))  # rowSums version faster
   div0 <- 2 * rowSums(P0 * P1)
-  depthsub[depthsub < 2] <- 1.1  # not using depthsub values <2 after this so set to >1 to avoid 0 divisor 
+  depthsub[depthsub < d4i] <- d4i  # not using depthsub values <=1 after this so set to >1 to avoid 0 divisor 
   Kdepth <- depth2K(depthsub)
   GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*Kdepth))/(1 - 2*Kdepth))/div0
 
   if (samptype == "pooled") {
    raf1 <- raf
-   raf1[depthsub < 2] <- 0
+   raf1[depthsub < d4i] <- 0
    diag(Gpool) <- 1 + rowSums((raf1^2 - 2 * P0 * P1 * (1 + 2*Kdepth))/(1 - 2*Kdepth))/div0
    rm(raf1)
    cat("Mean self-relatedness pools (Gpool diagonal):", mean(diag(Gpool)), "\n")
@@ -1649,6 +1649,7 @@ calcGdiag <- function(snpsubset, puse, indsubset, depth.min = 0, depth.max = Inf
   if (missing(snpsubset))   snpsubset <- 1:nsnps
   if (missing(indsubset))   indsubset <- 1:nind
   if (missing(puse))        puse <- p
+  d4i <- 1.001  # min depth to use in inbreeding calcs. Anything in (1,2] OK for normal data, but a low value used in case effective depth (non-integer) being used
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
   depthsub <- depth[indsubset, snpsubset]
@@ -1662,29 +1663,27 @@ calcGdiag <- function(snpsubset, puse, indsubset, depth.min = 0, depth.max = Inf
    puse <- matrix(puse,byrow=TRUE,nrow=nindsub,ncol=nsnpsub)
    }
   if(!nrow(puse) == nindsub | !ncol(puse) == nsnpsub) stop("Dimensions of puse are incorrect.")
-  if(min(depth) < 2) depth[depth < 2] <- 1.1        # in case got here without executing this
+  if(min(depth) < d4i) depth[depth < d4i] <- d4i     # these obs become irrelevant
   if(!quiet) cat("Calculating G diags\n")
   if(!quiet) cat("# SNPs: ", nsnpsub, "\n")
   if(!quiet) cat("# individuals: ", nindsub, "\n")
   genon0 <- genon[indsubset, snpsubset]
   usegeno <- !is.na(genon[indsubset, snpsubset])
   if (depth.min > 1 | depth.max < Inf) {
-    genon0[depth[indsubset, snpsubset] < depth.min] <- NA
-    genon0[depth[indsubset, snpsubset] > depth.max] <- NA
     depthsub[depthsub < depth.min] <- 0
     depthsub[depthsub > depth.max] <- 0
-    usegeno[depth[indsubset, snpsubset] < depth.min] <- FALSE
-    usegeno[depth[indsubset, snpsubset] > depth.max] <- FALSE
+    genon0[depthsub==0] <- NA
+    usegeno[depthsub==0] <- FALSE
     }
   genon0 <- genon0 -  2 * puse
   genon0[is.na(genon0)] <- 0     # equivalent to using 2p for missing genos
   genon01 <- genon0
-  genon01[depth[indsubset, snpsubset] < 2] <- 0
+  genon01[depthsub < d4i] <- 0
 #  P0 <- matrix(puse[snpsubset], nrow = nindsub, ncol = nsnpsub, byrow = T)
   P0 <- puse
   P1 <- 1 - P0
-  P0[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
-  P1[!usegeno | depth[indsubset, snpsubset] < 2] <- 0
+  P0[!usegeno | depthsub < d4i] <- 0
+  P1[!usegeno | depthsub < d4i] <- 0
   div0 <- 2 * rowSums(P0 * P1)
   Kdepth <- depth2K(depth[indsubset, snpsubset])
   GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*Kdepth))/(1 - 2*Kdepth))/div0
