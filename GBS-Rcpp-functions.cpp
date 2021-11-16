@@ -144,7 +144,7 @@ Rcpp::NumericMatrix rcpp_depth2Kmodp(const Rcpp::NumericMatrix &depthvals, doubl
 // modifies the matrices in-place (i.e. doesn't return anything)
 // [[Rcpp::export]]
 void rcpp_assignP0P1Genon01(Rcpp::NumericMatrix &P0, Rcpp::NumericMatrix &P1, Rcpp::NumericMatrix &genon01,
-        const Rcpp::LogicalMatrix &usegeno, const Rcpp::NumericMatrix &dsub, int nThreads) {
+        const Rcpp::LogicalMatrix &usegeno, const Rcpp::NumericMatrix &dsub, double d4i, int nThreads) {
 	// set up number of threads
 	nThreads = check_nThreads(nThreads);
 
@@ -155,7 +155,7 @@ void rcpp_assignP0P1Genon01(Rcpp::NumericMatrix &P0, Rcpp::NumericMatrix &P1, Rc
     #pragma omp parallel for num_threads(nThreads)
     for (long i = 0; i < size; i++) {
         // set to zero if they match the conditions
-        if (dsub[i] < 2.0) {
+        if (dsub[i] < d4i) {
             P0[i] = 0.0;
             P1[i] = 0.0;
             genon01[i] = 0.0;
