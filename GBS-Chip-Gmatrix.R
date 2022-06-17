@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "1.0.2"
+KGDver <- "1.0.3"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
@@ -134,6 +134,8 @@ readGBS <- function(genofilefn = genofile, usedt="recommended") {
  if (gform == "TagDigger") readTD(genofilefn)
  if (toupper(gform) == "VCF") read.vcf(genofilefn)
  if (gform %in% c("uneak","Tassel")) readTassel(genofilefn, usedt=usedt)
+ ndups <- sum(duplicated(seqID))
+ if(ndups>0) cat("Warning: ",ndups,"duplicated seqIDs, 1st one is:",seqID[duplicated(seqID)][1],"\n")
  }
 
 readTD <- function(genofilefn0 = genofile, skipcols=0) {
@@ -210,10 +212,10 @@ readANGSD <- function(genofilefn0 = genofile) {
 
  read.vcf <- function(vcffile=genofile) {  # uses AD then GT if either/both available
   # undoc function. Needs data.table and (for .gz files) R.utils
-  if(!require(data.table)) stop("data.table package required for read.vcf.gt")
+  if(!require(data.table)) stop("data.table package required for read.vcf")
   if(nogenos) cat("Warning: No SNP or sample info yet with gform VCF and nogenos\n")
   if(!nogenos) {
-   vcfin <- fread(vcffile)   # manages to skip the headers by itself
+   vcfin <- fread(vcffile,skip="#CHROM")   # skip headers until #CHROM found on a row
    if(colnames(vcfin)[1]=="V1") { 
     cat("Correcting added first column name, remove trailing (blank?) column (ignore fread warning below)\n")
     colnames(vcfin)[1:ncol(vcfin)-1] <-  colnames(vcfin)[2:ncol(vcfin)] 
@@ -226,6 +228,7 @@ readANGSD <- function(genofilefn0 = genofile) {
    nind <<- length(seqID)
    chrom <<- vcfin$`#CHROM`
    pos <<- vcfin$POS
+   if(all(SNP_Names==".")) SNP_Names <<- paste(chrom,pos,sep="_")
    nfields <- 1+ lengths(regmatches(vcfin$FORMAT,gregexpr(":",vcfin$FORMAT)))
    tempformats <- read.table(text=vcfin$FORMAT,sep=":",fill=TRUE,stringsAsFactors=FALSE,col.names=paste0("V",1:max(nfields)))
    gthave = apply(tempformats=="GT",1,any)
@@ -259,16 +262,18 @@ readANGSD <- function(genofilefn0 = genofile) {
  }
 
 readChip <- function(genofilefn0 = genofile) {
-  ghead <- scan(genofilefn0,what="",nlines=1,sep=",", quote="")
+  ghead <- scan(genofilefn0,what="",nlines=1,sep=",", quote="", quiet=TRUE)
   SNP_Names <<- ghead[-1]
   nsnps <<- length(SNP_Names)
+  cat("Data file has", nsnps, "SNPs \n")
   if(nogenos) cat("Warning: No sample info yet with gform chip data and nogenos\n")
   if(!nogenos) {
-   genost <- scan(genofilefn0,what="",skip=1,sep=",", quote="") # read as text ... easier to pull out elements than list of nsnps+1
+   genost <- scan(genofilefn0,what="",skip=1,sep=",", quote="", quiet=TRUE) # read as text ... easier to pull out elements than list of nsnps+1
    snpnums <- ((1:length(genost))-1) %% (nsnps+1)
    genon <<- matrix(as.numeric(genost[which(snpnums !=0)]) ,ncol=nsnps,byrow=TRUE)
    seqID <<-  genost[which(snpnums ==0)]
    nind <<- length(seqID)
+   cat("Data file has", nind, "samples \n")
    rm(genost)
    depth <<- matrix(Inf, nrow = nind, ncol = nsnps)
    depth[is.na(genon)] <<- 0
@@ -662,7 +667,8 @@ GBSsummary <- function() {
  write.csv(data.frame(seqID = seqID), "seqID.csv", row.names = FALSE)
  snpdepth <<- colMeans(depth)
  uremove <- which(p == 0 | p == 1 | is.nan(p) | snpdepth < snpdepth.thresh)
- cat(length(uremove), "SNPs with MAF=0 or depth <", snpdepth.thresh, "removed\n")
+ nmaf0 <- length(which(p == 0 | p == 1))
+ cat(nmaf0, "SNPs with MAF=0 and", length(uremove)-nmaf0, "SNPs with depth <", snpdepth.thresh, "removed\n")
  snp.remove(uremove)
 cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
 
@@ -801,6 +807,7 @@ if(!functions.only) {
 
 ################## functions
 upper.vec <- function(sqMatrix,diag=FALSE) as.vector(sqMatrix[upper.tri(sqMatrix,diag=diag)])
+corner <- function(mtx, size=6L) print(mtx[1:size,1:size])
 #seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1] # might not get number of cols right
 seq2samp1 <- function(seqIDvec=seqID, splitby="_", ...) sapply(strsplit(seqIDvec,split=splitby, ...),"[",1)
 seq2samp <- function(seqIDvec=seqID, splitby="_",nparts=NULL,dfout=FALSE, ...){
@@ -826,7 +833,8 @@ seq2samp <- function(seqIDvec=seqID, splitby="_",nparts=NULL,dfout=FALSE, ...){
 }
 
 
-colourby <- function(colgroup, nbreaks=0, col.name=NULL, symbgroup=NULL, symb.name=NULL,groupsort=FALSE,maxlight=1,alpha=1,reverse=FALSE,symbset=NULL,hclpals=character(0),pal.upper=1) {
+colourby <- function(colgroup, nbreaks=0, col.name=NULL, symbgroup=NULL, symb.name=NULL,groupsort=FALSE,maxlight=1,alpha=1,reverse=FALSE,symbset=NULL,
+            hclpals=character(0),pal.upper=1, nacolour="black") {
  #maxlight is maximum lightness between 0 and 1
  #nbreaks is suggested # breaks
  isgroups <- (nbreaks==0)
@@ -875,6 +883,7 @@ colourby <- function(colgroup, nbreaks=0, col.name=NULL, symbgroup=NULL, symb.na
    if(!is.null(symb.name)) outlist <- c(outlist,symb.name=symb.name)
    }
   }
+ outlist$sampcol[is.na(outlist$sampcol)] <- nacolour
  outlist
  }
 
@@ -941,11 +950,17 @@ colkey <- function(colobj, sfx="", srt.lab=0, plotch=16, horiz = TRUE, freq=FALS
  dev.off()
  }
 
-collegend <- function(colobj,legpos="topleft", plotx=NULL, ploty=NULL) {
+collegend <- function(colobj,legpos="topleft", plotx=NULL, ploty=NULL, cex.leg=0.9) {
      # being tested
+     legendsym <- 1  #default value
+     if (length(unique(colobj$symblist))==1) legendsym <- colobj$symblist[1] else
+     if(length(colobj$symblist) == length(colobj$collist)) if(
+         length(colobj$collist) == qr(model.matrix(~ colobj$sampcol +  as.factor(colobj$sampsymb)))$rank) legendsym <- colobj$symblist
      legname1 <- ""; if(!is.null(colobj$col.name)) legname1 <- colobj$col.name
      legname2 <- ""; if(!is.null(colobj$symb.name)) legname2 <- colobj$symb.name
-     if(!is.numeric(colobj$collabels)) leginfo <- legend(legendpos, legend=colobj$collabels, col=colobj$collist, pch=legendsym, ncol=ncolumns, cex=0.9, title=legname1)$rect
+     ncolumns <- 1; if(length(colobj$collist) > 6 & !is.numeric(colobj$collabels)) ncolumns <- 2
+     ncolumns2 <- 1; if(length(colobj$symblist) > 6) ncolumns2 <- 2
+     if(!is.numeric(colobj$collabels)) leginfo <- legend(legpos, legend=colobj$collabels, col=colobj$collist, pch=legendsym, ncol=ncolumns, cex=cex.leg, title=legname1)$rect
      if(is.numeric(colobj$collabels)) { #raster instead of legend
       leginfo <- legend(legpos,legend=rep("test",3),plot=FALSE,title=legname1)$rect # find where a 3 element legend would go
       topadj <- 1.5 * strheight(legname1)
@@ -965,23 +980,23 @@ collegend <- function(colobj,legpos="topleft", plotx=NULL, ploty=NULL) {
        lines(x=leginfo$left+c(0.6,0.63)*leginfo$w,y=rep(rast0+rtickss[itick]*rasth,2))
        text(x=leginfo$left+0.65*leginfo$w, y= rast0+rtickss[itick]*rasth, labels=format(rticks)[itick],adj=c(0,0.5), cex=0.7)
        }
-      text(x=leginfo$left+0.5*leginfo$w,y=leginfo$top, labels=legname1, xpd=NA, adj=c(0.5,0), cex=0.9)
+      text(x=leginfo$left+0.5*leginfo$w,y=leginfo$top, labels=legname1, xpd=NA, adj=c(0.5,0), cex=cex.leg)
       } #raster
     if(!is.null(plotx) & !is.null(ploty)) { #check that plot points not covered
      ncovered <- length(which(plotx > leginfo$left & plotx < leginfo$left + leginfo$w & ploty < leginfo$top & ploty > leginfo$top - leginfo$h))
      if(ncovered > 0) cat("Warning: ",ncovered,"data points covered by colour legend\n")
      }
     if(!is.null(colobj$symblabels)) {
-     leginfo2 <- legend(legendpos, legend=colobj$symblabels, ncol=ncolumns2, cex=0.9, title=legname2, plot=FALSE)$rect
+     leginfo2 <- legend(legpos, legend=colobj$symblabels, ncol=ncolumns2, cex=cex.leg, title=legname2, plot=FALSE)$rect
      x2 <- leginfo$left - leginfo2$w *1.05 
-     y2 <- min(leginfo$top,max(ploty))
+     y2 <- min(leginfo$top,max(ploty,na.rm=TRUE))
      if(!is.null(plotx) & !is.null(ploty)) { #direct 2nd legend to sparse location beside 1st legend & check that plot points not covered
-      if(leginfo$left < mean(plotx)) x2 <- leginfo$left + leginfo$w *1.05
-      if(leginfo$top < mean(ploty)) y2 <- min(ploty) + leginfo2$h
+      if(leginfo$left < mean(plotx,na.rm=TRUE)) x2 <- leginfo$left + leginfo$w *1.05
+      if(leginfo$top < mean(ploty,na.rm=TRUE)) y2 <- min(ploty,na.rm=TRUE) + leginfo2$h
       ncovered <- length(which(plotx > leginfo2$left & plotx < leginfo2$left + leginfo2$w & ploty < leginfo2$top & ploty > leginfo2$top - leginfo2$h))
       if(ncovered > 0) cat("Warning: ",ncovered,"data points covered by symbol legend\n")
       }
-     leginfo2 <- legend(x=x2, y=y2, legend=colobj$symblabels, col="black", pch=colobj$symblist, ncol=ncolumns2, cex=0.9, title=legname2)$rect
+     leginfo2 <- legend(x=x2, y=y2, legend=colobj$symblabels, col="black", pch=colobj$symblist, ncol=ncolumns2, cex=cex.leg, title=legname2)$rect
      }
  } #collegend
 
@@ -1266,11 +1281,6 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   if (missing(indsubset))   indsubset <- 1:nind
   if (missing(puse))        puse <- p
   d4i <- 1.001  # min depth to use in inbreeding calcs. Anything in (1,2] OK for normal data, but a low value used in case effective depth (non-integer) being used
-  pusena <- which(is.na(puse))
-  npusena <- length(intersect(pusena,snpsubset))
-  if(npusena > 0 ) cat("Warning:", npusena,"SNPs with NA allele frequencies were removed\n")
-  snpsubset <- setdiff(snpsubset,pusena)
-  if(any(puse[snpsubset] == 0 | puse[snpsubset] == 1 ) ) cat("Warning: Some MAFs are 0\n")
 
   Gpool <- NULL
   samptype <- tolower(samptype)
@@ -1325,7 +1335,6 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   }
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
-  depthsub <- depth[indsubset, snpsubset]
   # puse - determine whether global or indiv specifc
   if(is.matrix(puse)) {  # allows matrix puse to be specified relative to all or subsetted data
    cat("Using individual allele frequencies\n")
@@ -1337,6 +1346,18 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    puse <- matrix(puse,byrow=TRUE,nrow=nindsub,ncol=nsnpsub)
    }
   if(!nrow(puse) == nindsub | !ncol(puse) == nsnpsub) stop("Dimensions of puse are incorrect.")
+  #check for NA allele freqs
+  pusecheck <- colSums(puse)
+  pusena <- which(is.na(pusecheck))
+  npusena <- length(pusena)
+  if(npusena > 0 ) {
+   cat("Warning:", npusena,"SNPs with NA allele frequencies were removed\n")
+   snpsubset <- snpsubset[-pusena]
+   pusecheck <- pusecheck[-pusena]
+   puse <- puse[,-pusena]
+   }
+  if(any(pusecheck == 0 | pusecheck == 1 ) ) cat("Warning: Some MAFs are 0\n")
+  depthsub <- depth[indsubset, snpsubset]
   
   cat("# SNPs: ", nsnpsub, "\n")
   cat("# individuals: ", nindsub, "\n")
@@ -1693,6 +1714,7 @@ ssdInb <- function(dpar=Inf, dmodel="bb", Inbtarget,snpsubset,puse,indsubset,qui
  if (missing(snpsubset))   snpsubset <- 1:nsnps
  if (missing(indsubset))   indsubset <- 1:nind
  if (missing(puse))        puse <- p
+ if (length(Inbtarget) != length(indsubset)) stop("Different lengths for Inbtarget and indsubset")
  depth2K <<- depth2Kchoose (dmodel=dmodel, param=dpar)
  NInb <- calcGdiag(snpsubset=snpsubset,puse=puse, indsubset=indsubset, quiet=quieti)-1
  Inbss <- sum((NInb-Inbtarget)^2, na.rm=TRUE)
@@ -1730,9 +1752,14 @@ GRMPCA <- function(Guse, PCobj=NULL, npc=2, npcxtra=0, pcasymbol=0, plotname="PC
    colobj <- pcacolo
    if(!is.numeric(colobj$collabels)) colobj$collabels[is.na(colobj$collabels)] <- "NA"
    pcacolo <- colobj$sampcol
+   if (length(unique(colobj$symblist))==1 & all(pcasymbol==0)) pcasymbol <- colobj$symblist[1] 
    if(! is.null(colobj$symblabels) & all(pcasymbol==0)) pcasymbol <- 1   #default to 1 if symbols are for another factor
    if( length(colobj$symblist) >0 & all(pcasymbol==0)) pcasymbol <- colobj$sampsym
    legendsym <- pcasymbol   # used for colour legend
+   if (length(unique(colobj$symblist))==1) legendsym <- colobj$symblist[1] else
+   if(length(colobj$symblist) == length(colobj$collist)) if(
+       length(colobj$collist) == qr(model.matrix(~ colobj$sampcol +  as.factor(colobj$sampsymb)))$rank) legendsym <- colobj$symblist
+       # symbols and colours match
    if(! is.null(colobj$symblabels)) pcasymbol <- colobj$sampsym
    legname1 <- NULL; if(!is.null(colobj$col.name)) legname1 <- colobj$col.name
    legname2 <- NULL; if(!is.null(colobj$symb.name)) legname2 <- colobj$symb.name
@@ -1780,6 +1807,7 @@ GRMPCA <- function(Guse, PCobj=NULL, npc=2, npcxtra=0, pcasymbol=0, plotname="PC
      pcasymbol <- 1
      if(nsamps < 100) pcasymbol <- 16
      }
+   if(length(pcasymbol)==1) pcasymbol <- rep(pcasymbol,nsamps)
    xlab0 <- "Principal component 1"
    ylab0 <- "Principal component 2"
    xtratxt <- ""; if(softI & is.null(PCobj)) xtratxt <- paste(" of",npc + npcxtra,"components")
@@ -1798,7 +1826,7 @@ GRMPCA <- function(Guse, PCobj=NULL, npc=2, npcxtra=0, pcasymbol=0, plotname="PC
    if(npc > 1) {
 #     plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, ... ,
 #          xlab = xlab0, ylab = ylab0)
-     do.call(plot, c(list(x=PC$x[, 1:2], col = pcacolo, pch = pcasymbol),plotargs) )
+     do.call(plot, c(list(x=PC$x[plotord, 1:2], col = pcacolo[plotord], pch = pcasymbol[plotord]),plotargs) )
      if(!is.null(legendf)) legendf()
    } else {
      hist(PC$x[, 1], 50, ...)
@@ -2080,10 +2108,15 @@ genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref
 
 ## Write KGD back to VCF file
 writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, keepgt=TRUE, mindepth=0, allele.ref="C", allele.alt="G", 
-                     verlabel="4.3",usePL=FALSE, contig.meta=FALSE){
+                     verlabel="4.3",usePL=FALSE, contig.meta=FALSE, CHROM=NULL, POS=NULL){
   if (is.null(outname)) outname <- "GBSdata"
   filename <- paste0(outname,".vcf")
-  if(!exists("alleles"))
+  if(gform=="chip" & max(depth) == Inf & !exists("alleles")) {  # create alleles for chip data
+   ref <- alt <- matrix(0,nrow=nind, ncol=nsnps)
+   ref[genon >= 1] <- Inf
+   alt[genon <= 1] <- Inf
+   }
+  else if(!exists("alleles"))
     stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")
   else if(is.null(alleles))
     stop("Allele matrix object `alleles` is set to NULL.")
@@ -2133,8 +2166,10 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
     out[,2] <- pos[snpsubset]
   }
   else{
-    out[,1] <- SNP_Names[snpsubset]
-    out[,2] <- 1:length(snpsubset)
+    if(is.null(CHROM)) CHROM <- SNP_Names
+    if(is.null(POS)) POS <- 1:nind
+    out[,1] <- CHROM[snpsubset]
+    out[,2] <- POS[snpsubset]
   }
   out[,3] <- SNP_Names[snpsubset]
   out[,4] <- allele.ref
@@ -2192,12 +2227,14 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
       # for missings, first change NA, to empty so that any set of NA,NA,...,NA changes to NA, then can set that to . which is vcf missing for the whole field
    }
   options(scipen=temp)
-  
+
+  outord <- 1:nrow(out)
+  if(gform == "Tassel" | (!is.null(CHROM) & !is.null(POS))) outord <- order(out[,1],as.numeric(out[,2]))
   ## fwrite is much faster
   if(require(data.table))
-    fwrite(split(t(out), 1:(length(indsubset)+9)), file=filename, sep="\t", append=TRUE, nThread = 1)
+    fwrite(split(t(out[outord,]), 1:(length(indsubset)+9)), file=filename, sep="\t", append=TRUE, nThread = 1)
   else
-    write.table(out, file = filename, append = T, sep="\t", col.names = F, row.names=FALSE, quote=FALSE)
+    write.table(out[outord,], file = filename, append = T, sep="\t", col.names = F, row.names=FALSE, quote=FALSE)
   return(invisible(NULL))
 }
 

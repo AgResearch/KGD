@@ -1,5 +1,5 @@
 #!/bin/echo Source me don't execute me 
-pedver <- "1.0.0"
+pedver <- "1.0.3"
 cat("GBS-PedAssign for KGD version:",pedver,"\n")
 
 # assume all in pedfile are in the genotype results. To do: remove those that are not
@@ -285,7 +285,7 @@ parEplot <- function(partype,EMMvar,relvar,plotcol="black",relthresh=rel.thresh,
       abline(v=relthresh, col="grey")
       abline(h=emmthresh, col="grey")
       edges <- par("usr") # xl,xr,yb,yt
-      poly1 <- data.frame(x1 = c(edges[1],rel.thresh,rel.thresh,edges[2],edges[2],edges[1],edges[1]), 
+      poly1 <- data.frame(x1 = c(edges[1],relthresh,relthresh,edges[2],edges[2],edges[1],edges[1]), 
                           y1 = c(edges[3],edges[3],emm.thresh,emm.thresh,edges[4],edges[4],edges[3]))
       polygon(poly1,col = rgb(0,0,0,alpha=0.1),border=NA) 
       dev.off()
@@ -622,15 +622,16 @@ addtagIDs <- function(sampinfo,indvar,tagvar,matchtype="both", pedresults) {
 
 bestparPCA <- function(Gobj,sfx="",keypos=NULL, pedinfo, BothMatches) {
  plotch <- assign.pch[match(BothMatches$BothAssign,assign.rank)]
- uf <- match(seqID[Gobj$indsubset],BothMatches$seqID)
- uo <- match(BothMatches$seqID,seqID[Gobj$indsubset])
+ ukeep <- which(seqID[Gobj$indsubset] %in% pedinfo$seqID)
+ uf <- match(seqID[Gobj$indsubset][ukeep],BothMatches$seqID)
+ uo <- match(BothMatches$seqID,seqID[Gobj$indsubset][ukeep])
  nprog=length(uo)
  pchuse <- plotch[uf]
  pchuse[is.na(pchuse)] <- 16
  png(paste0("PC-BestParents",sfx,".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
-  with(Gobj$PC,  plot(x[, 2] ~ x[, 1], cex = 1, col = fcolo[Gobj$indsubset], pch=pchuse, xlab = "Principal component 1", ylab = "Principal component 2") )
+  with(Gobj$PC,  plot(x[ukeep, 2] ~ x[ukeep, 1], cex = 1, col = fcolo[Gobj$indsubset][ukeep], pch=pchuse, xlab = "Principal component 1", ylab = "Principal component 2") )
   ParentLines <- data.frame(x=rep(NA,3*nprog),y=rep(NA,3*nprog))
-  ParentLines[seq(1,(3*nprog-2),3),] <- Gobj$PC$x[uo,1:2]
+  ParentLines[seq(1,(3*nprog-2),3),] <- Gobj$PC$x[ukeep[uo],1:2]
   ParentLines[seq(2,(3*nprog-1),3),] <- Gobj$PC$x[match(pedinfo$seqID[match(BothMatches$BestFatherMatch,pedinfo$IndivID)],seqID[Gobj$indsubset]),1:2]
   lines(ParentLines,col="blue")
   ParentLines[seq(2,(3*nprog-1),3),] <- Gobj$PC$x[match(pedinfo$seqID[match(BothMatches$BestMotherMatch,pedinfo$IndivID)],seqID[Gobj$indsubset]),1:2]
@@ -863,7 +864,7 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       trioplots(BothMatches=BothMatches)
       plotch <- assign.pch[match(BothMatches$BothAssign,assign.rank)]
       upairs <- which(!is.na(BothMatches$mmrateF1M1))
-      if(length(upairs)>0) {
+      if(length(upairs)>0 & any(!is.na(rowSums(EMMrates[upairs,])))) {
        png("MMrateBoth.png", width = 640, height = 640, pointsize = cex.pointsize *  15)
         pairs(with(BothMatches[upairs,],cbind(mmrateF2M2,mmrateF1M2,mmrateF2M1,mmrateF1M1)),upper.panel=panel.yeqx,lower.panel=NULL,
                   main="Raw Mismatch Rates", labels=c("Father2,\nMother2","Father1,\nMother2","Father2,\nMother1","Father1,\nMother1"),

@@ -1,4 +1,4 @@
-PopGenver <- "1.0.0"
+PopGenver <- "1.0.3"
 cat("GBS-PopGen for KGD version:",PopGenver,"\n")
 
 heterozygosity <- function(indsubsetgf=1:nind,snpsubsetgf=1:nsnps,maxiter=100,convtol=0.001){
@@ -172,16 +172,18 @@ popmaf <- function(snpsubset, indsubset, populations=NULL, subpopulations=NULL, 
  }
 
 
-popG <- function(Guse,populations) {
+popG <- function(Guse, populations, diag=FALSE) {
  #average a G matrix by populations (without self-rel) + mean self-rel by populations
+ numericpops <- is.numeric(populations)
+ if(numericpops) populations <- as.character(populations)
  Xpops <- model.matrix(~populations -1)
- poptext <- names(attr(Xtest,"contrast"))
- popnames <- sub(poptext,"",colnames(Xtest),fixed=TRUE)
+ poptext <- names(attr(Xpops,"contrast"))
+ popnames <- sub(poptext,"",colnames(Xpops),fixed=TRUE)
  colnames(Xpops) <-  popnames
  npops <- colSums(Xpops)
  popG <- t(Xpops %*% diag(1/npops)) %*% Guse %*% Xpops %*% diag(1/npops)
  popSelf <- t(Xpops %*% diag(1/npops)) %*% diag(Guse)
- diag(popG) <- (diag(popG) * npops - popSelf) / (npops - 1)
+ if(!diag) diag(popG) <- (diag(popG) * npops - popSelf) / (npops - 1)
  colnames(popG) <- rownames(popG) <-  rownames(popSelf) <- colnames(Xpops)
  colnames(popSelf) <- "Inbreeding"
  list(G=popG, Inb = popSelf-1)
