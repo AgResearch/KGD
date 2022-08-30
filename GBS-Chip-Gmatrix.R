@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "1.0.3"
+KGDver <- "1.1.0"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
@@ -211,7 +211,7 @@ readANGSD <- function(genofilefn0 = genofile) {
 }
 
  read.vcf <- function(vcffile=genofile) {  # uses AD then GT if either/both available
-  # undoc function. Needs data.table and (for .gz files) R.utils
+  # Needs data.table and (for .gz files) R.utils
   if(!require(data.table)) stop("data.table package required for read.vcf")
   if(nogenos) cat("Warning: No SNP or sample info yet with gform VCF and nogenos\n")
   if(!nogenos) {
@@ -222,6 +222,8 @@ readANGSD <- function(genofilefn0 = genofile) {
     vcfin[,ncol(vcfin)] <- NULL
     }
    SNP_Names <<- vcfin$ID
+   refalleles <<- vcfin$REF
+   altalleles <<- vcfin$ALT
    nsnps <<- length(SNP_Names)
    formatcol <- which(colnames(vcfin)=="FORMAT")
    seqID <<-  colnames(vcfin)[-(1:formatcol)]
@@ -238,6 +240,7 @@ readANGSD <- function(genofilefn0 = genofile) {
    genon <<- matrix(NA,nrow=nind,ncol=nsnps)
    if(any(gthave)) {
     tempgt <- read.table(text=as.matrix(vcfin[gthave,-(1:formatcol)]),sep=":",fill=TRUE,stringsAsFactors=FALSE)[matrix(c(1:(nind*sum(gthave)),rep(gtpos,nind)),ncol=2,dimnames=list(NULL,c("row","col")))]
+    tempgt[tempgt=="."] <- "./."
     genongt <- t(matrix(rowSums(read.table(text=gsub("/","|",tempgt),sep="|",na.strings=".")),nrow=sum(gthave)))
     genon[,which(gthave)] <<- genongt
     }
@@ -329,12 +332,24 @@ readTassel <- function(genofilefn0 = genofile, usedt="recommended") {
     if (gform == "uneak") AFrq <<- genosin[[length(genosin)]]
     }
    }
+  unadepth <- which(is.na(alleles))
+  if(length(unadepth)>0) alleles[unadepth] <<- 0
   invisible(NULL)
 }
 
 parkGBS <- function() {
  #refalleles altalleles
- parkeddata <- list(nsnps=nsnps,SNP_Names=SNP_Names, seqID = seqID, nind=nind, alleles = alleles)
+ if(!exists("alleles")) {
+    alleles <- matrix(0,nrow=nind, ncol=2*nsnps)
+    tempalleles <- matrix(0,nrow=nind,ncol=nsnps)
+    tempalleles[which(genon == 0)] <- depth[which(genon==0)]
+    tempalleles[which(genon == 1)] <- depth[which(genon==1)]/2
+    alleles[,seq(1, 2 * nsnps - 1, 2)] <- tempalleles
+    tempalleles[which(genon == 2)] <- depth[which(genon==2)]
+    tempalleles[which(genon == 0)] <- 0
+    alleles[,seq(2, 2 * nsnps, 2)] <- tempalleles
+  }
+ parkeddata <- list(nsnps=nsnps,SNP_Names=SNP_Names, seqID = seqID, nind=nind, alleles = alleles) 
  }
 
 activateGBS <- function(GBSobj) {
@@ -361,7 +376,7 @@ joinGBS <- function(join1, join2=NULL, replace=TRUE, uniqueSNPs=FALSE) {
  outobj <- NULL
  if(replace) {
   nsnps <<- nsnps; SNP_Names <<- SNP_Names; seqID <<- seqID; nind <<- nind; alleles <<- alleles
-  if(exists("depth")) rm(depth,genon)
+  if(exists("depth")) rm(depth,genon, pos=1)
   } else {
   outobj <- list(nsnps=nsnps,SNP_Names=SNP_Names, seqID = seqID, nind=nind, alleles = alleles)
   }
@@ -652,29 +667,16 @@ GBSsummary <- function() {
    seqID.removed <<- c(seqID.removed, seqID[u1])
    }
   samp.remove(union(u0, u1))
-  docalcp <- FALSE
-  if (!exists("p") | length(seqID.removed) > 0) docalcp <- TRUE
-  if (exists("p")) if (length(p) != nsnps) docalcp <- TRUE
-  if (docalcp) { # not redone e.g. after merge
-   p <<- calcp()
-   if (is.null(p)) {
-    cat("alleles not available, using genotype method for p\n")
-    p <- calcp(pmethod="G")
-    }
-   }
-  if(exists("genosin")) rm(genosin)
-  } #end GBS-specific
- write.csv(data.frame(seqID = seqID), "seqID.csv", row.names = FALSE)
- snpdepth <<- colMeans(depth)
- uremove <- which(p == 0 | p == 1 | is.nan(p) | snpdepth < snpdepth.thresh)
- nmaf0 <- length(which(p == 0 | p == 1))
- cat(nmaf0, "SNPs with MAF=0 and", length(uremove)-nmaf0, "SNPs with depth <", snpdepth.thresh, "removed\n")
- snp.remove(uremove)
-cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
 
  if (!gform == "chip") {
   if (!havedepth) {
    genon <<- alleles[, seq(1, 2 * nsnps - 1, 2)]/depth
+   if(max(alleles)==Inf) {
+    atemp <- alleles
+    atemp[alleles==Inf] <- 1e6
+    dtemp <- atemp[, seq(1, 2 * nsnps - 1, 2)] + atemp[, seq(2, 2 * nsnps, 2)]
+    genon <<- atemp[, seq(1, 2 * nsnps - 1, 2)]/dtemp
+    }
    genon <<-  trunc(2*genon-1)+1
    }
 #  uhet <- which(!genon^2 == genon)
@@ -687,6 +689,26 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
 #  rm(uhet)
   }
  gc()
+
+  docalcp <- FALSE
+  if (!exists("p") | length(seqID.removed) > 0) docalcp <- TRUE
+  if (exists("p")) if (length(p) != nsnps) docalcp <- TRUE
+  if (docalcp) { # not redone e.g. after merge
+   p <<- calcp()
+   if (is.null(p)) {
+    cat("alleles not available, using genotype method for p\n")
+    p <<- calcp(pmethod="G")
+    }
+   }
+  if(exists("genosin")) rm(genosin)
+  } #end GBS-specific
+ write.csv(data.frame(seqID = seqID), "seqID.csv", row.names = FALSE)
+ snpdepth <<- colMeans(depth)
+ uremove <- which(p == 0 | p == 1 | is.nan(p) | snpdepth < snpdepth.thresh)
+ nmaf0 <- length(which(p == 0 | p == 1))
+ cat(nmaf0, "SNPs with MAF=0 and", length(uremove)-nmaf0, "SNPs with depth <", snpdepth.thresh, "removed\n")
+ snp.remove(uremove)
+cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
 
  ###### compare allele frequency estimates from allele counts and from genotype calls (& from input file, if uneak format)
  pg <<- colMeans(genon, na.rm = TRUE)/2  # allele freq assuming genotype calls
@@ -773,7 +795,7 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  x2starplots()
  if(outlevel > 9) HWsigplot(plotname="HWdisMAFsig-raw")
  if(outlevel > 4) {
-  yaxpts <- quantile(LRT,QQprobpts)
+  yaxpts <- quantile(LRT,QQprobpts, na.rm=TRUE)
   png("LRT-QQ.png", width = 480, height = 480, pointsize = cex.pointsize * 12)
    qqplot(qchisq(ppoints(nsnps), df = 1), LRT, cex=0.75, main = "Hardy-Weinberg LRT Q-Q Plot", 
          xlab = parse(text = "Theoretical ~~ (chi[1]^2) ~~  Quantiles"), ylab = "Sample Quantiles")
@@ -1013,7 +1035,9 @@ mismatch.ident <- function(seqid1, seqid2,snpsubset=1:nsnps, puse=p, mindepth.mm
   pj <- genon[pos2, usnp]/2
   K1  <-  depth2K(depthi[usnp])
   K2  <-  depth2K(depthj[usnp])
-  nmismatch <- length(which(pi != pj))
+  mismatched <- (pi != pj)
+  #nmismatch <- length(which(pi != pj))
+  nmismatch <- sum(mismatched)
   ncompare <- length(usnp)
   ptemp <- puse[usnp]
   P <- ptemp*(1-ptemp)
@@ -1026,11 +1050,13 @@ mismatch.ident <- function(seqid1, seqid2,snpsubset=1:nsnps, puse=p, mindepth.mm
   if(length(ug)>0) expmm[ug] <- 2 * P[ug] * (1 - K1[ug]) * K2[ug] / ((1-ptemp[ug])^2+2*P[ug]*K1[ug])
   exp.mmrate <- mean(expmm,na.rm=TRUE)
   mmrate <- nmismatch/ncompare
-  list(mmrate=mmrate,ncompare=ncompare,exp.mmrate=exp.mmrate)
+  snpmmstats <- data.frame(mm=logical(nsnps),expmm=numeric(nsnps)); snpmmstats[,] <- NA
+  snpmmstats[usnp,1] <- mismatched; snpmmstats[usnp,2] <- pmin(expmm,rep(1,ncompare))  # why can expmm be >1 ?
+  list(mmrate=mmrate,ncompare=ncompare,exp.mmrate=exp.mmrate,snpmmstats=snpmmstats)
 }
 
 
-posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:nsnps,puse=p) {
+posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:nsnps,puse=p, snpreport=FALSE, quiet=FALSE) {
  if (missing(Gindsubset)) Gindsubset <- 1:nind
  if (missing(indsubset)) indsubset <- 1:nrow(Guse)
  havedepth <- exists("sampdepth")
@@ -1043,7 +1069,8 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
  posCstats <- data.frame(mergeID=character(0),nresults=integer(0),selfrel=numeric(0),meanrel=numeric(0),minrel=numeric(0),
               meandepth=numeric(0),mindepth=numeric(0),meanCR=numeric(0),mmrate=numeric(0),exp.mmrate=numeric(0),EMM=numeric(0),stringsAsFactors=FALSE)
  meandepth <- mindepth <- meanCR <- mmrate <- exp.mmrate <- IEMM <- NA
- sink(paste0("posCchecks",sfx,".txt"),split=TRUE)
+ sink(paste0("posCchecks",sfx,".txt"),split=!quiet)
+ snpstats <- data.frame(snpcount = integer(nsnps), snpmm=integer(nsnps), expmm=numeric(nsnps))
  for (i in seq_along(multiIDs)) {
   thisID <- multiIDs[i]
   thispos <- which(mergeIDs==thisID)
@@ -1066,6 +1093,10 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
     emmstatstemp <- mismatch.ident(seqIDtemp[thispos[ipos]],seqIDtemp[thispos[jpos]],snpsubset=snpsubset,puse=puse)  # do it both ways
     mmmat[ipos,jpos] <-emmstatstemp$mmrate
     expmmmat[ipos,jpos] <- emmstatstemp$exp.mmrate
+    ucompare <- which(!is.na(emmstatstemp$snpmmstats$mm))
+    snpstats$snpcount[ucompare] <- snpstats$snpcount[ucompare] + 1
+    snpstats$snpmm[ucompare] <- snpstats$snpmm[ucompare] + emmstatstemp$snpmmstats$mm[ucompare]
+    snpstats$expmm[ucompare] <- snpstats$expmm[ucompare] + emmstatstemp$snpmmstats$expmm[ucompare]
     }
    expmmmat <- (expmmmat+t(expmmmat))/2
    mmrate <- mean(mmmat,na.rm=TRUE)
@@ -1079,6 +1110,8 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
                         depth1 = thisdepth[ulorel[, 1]],depth2 = thisdepth[ulorel[, 2]], IEMM = (mmmat-expmmmat)[ulorel]))
   }
  sink()
+ snpstats$mmrate <- snpstats$snpmm / snpstats$snpcount 
+ snpstats$expmm <- snpstats$expmm / snpstats$snpcount 
  write.csv(posCstats,file=csvout,row.names=FALSE,quote=FALSE)
  if(nrow(posCstats) > 1) {
   png(paste0("SelfRel",sfx,".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
@@ -1095,9 +1128,24 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
    png(paste0("posC-EMM", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
     with(posCstats,pairs(cbind(meanrel,selfrel,IEMM)))
     dev.off()
+   if(snpreport) {
+    depthtrans <- function(x) round(20 * log(-log(1/(x + 0.9)) + 1.05))  # to compress colour scale at higher depths
+    depthpoints <- c(0.5, 5, 50, 250)  # legend points
+    transpoints <- depthtrans(depthpoints)
+    mindepthplot <- 0.1
+    maxdepthplot <- 256
+    maxtrans <- depthtrans(maxdepthplot)
+    png(paste0("posC-SNPMM", sfx, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+     with(snpstats,plot(mmrate ~ expmm, col = palette.aquatic[depthtrans(pmax(mindepthplot, pmin(snpdepth, maxdepthplot)))],
+                        xlab = "Expected SNP mismatch rate", ylab = "Raw SNP mismatch rate", cex=0.8, 
+                        main="SNP mismatch rate vs expected mismatch rate"))
+     title(main="using default finplot colours", line=1, cex.main=0.75)
+     abline(a=0,b=1,col="red",lwd=2)
+     dev.off()
+    }
    }
   }
- posCstats
+ if(snpreport) list(posCstats=posCstats, snpstats=snpstats) else posCstats
  }
 
 mergeSamples <- function(mergeIDs, indsubset, replace=FALSE) {  
@@ -1408,7 +1456,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     dev.off()
     }
   samplesOK <- exists("samples")
-  if(samplesOK) if(nrow(samples) != nind) samplesOK <- FALSE
+  if(samplesOK) if(nrow(samples) != nind | any(is.na(samples[depth>0]))) samplesOK <- FALSE
   if (!gform == "chip" & calclevel > 2 & outlevel > 7 & samplesOK) {
    samples0 <- samples[indsubset, snpsubset] - 2 * puse
    samples0[is.na(genon0)] <- 0
@@ -1480,6 +1528,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   GGBS5 <- GGBS4
   diag(GGBS5) <- GGBS5d
   cat("Mean self-relatedness (G5 diagonal):", mean(GGBS5d), "\n")
+  if(calclevel >1) cat("Mean relatedness (G5 off-diagonal):", (nindsub*mean(GGBS5)-mean(GGBS5d))/(nindsub-1), "\n")
   uhirel <- which(GGBS5 > hirel.thresh & upper.tri(GGBS5), arr.ind = TRUE)
   if (nrow(uhirel) > 0 & nsnpsub >= 999) 
     write.csv(data.frame(Indiv1 = seqID[indsubset][uhirel[, 1]], Indiv2 = seqID[indsubset][uhirel[, 2]], G5rel = GGBS5[uhirel], SelfRel1 = GGBS5d[uhirel[,1]], SelfRel2 = GGBS5d[uhirel[,2]] ), 
@@ -1500,12 +1549,13 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
       temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = TRUE))
       }
      if(withHeatmaply){
-       if(length(table(pcacolo)) > 1) {
+       if(length(table(plotly.group)) > 1) {
          temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=TRUE,
                              width=1000, height=1000, plot_method="plotly", margins=c(0,0,0,0), seriate="none",
                              labRow = paste0("<br>",hover.info), labCol = paste0("<br>",hover.info), showticklabels=FALSE,
                              label_names=c("<b>Row</b>","<b>Column</b>","<b>Relatedness value</b>"),
-                             ColSideColors=pcacolo, RowSideColors=pcacolo,
+#                             ColSideColors=pcacolo, RowSideColors=pcacolo,
+                             ColSideColors=plotly.group[pcasamps], RowSideColors=plotly.group[pcasamps],
                              file=paste0("Heatmap-G5", sfx, ".html")) %>% layout(width=1000,height=1000)
        } else{
          temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=TRUE,
@@ -1810,6 +1860,7 @@ GRMPCA <- function(Guse, PCobj=NULL, npc=2, npcxtra=0, pcasymbol=0, plotname="PC
    if(length(pcasymbol)==1) pcasymbol <- rep(pcasymbol,nsamps)
    xlab0 <- "Principal component 1"
    ylab0 <- "Principal component 2"
+   if(class(PC)=="lda") {   xlab0 <- "LDA component 1"; ylab0 <- "LDA component 2"; PC$d <- PC$svd}
    xtratxt <- ""; if(softI & is.null(PCobj)) xtratxt <- paste(" of",npc + npcxtra,"components")
  
    if("d" %in% names(PC)) {
@@ -1906,7 +1957,7 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
  if(isTRUE(outtype==0)) cat("Warning, no output will be produced \nSpecify outtype(s):\n 1 R datasets\n 2 G matrix\n 3 long G\n 4 inbreeding\n 5 t-SNE\n 6 PCA\n")
  if (is.list(Guse)) {
   if("PC" %in% names(Guse)) {PCtemp <- Guse$PC; nindout <- nrow(PCtemp$x)}
-  if("samp.removed" %in% names(Guse)) samp.removed <- Guse$samp.removed
+  if("samp.removed" %in% names(Guse)) {samp.removed <- Guse$samp.removed; nindout <- nindout+length(samp.removed)}
   if(any(outtype != 6)) { # ignore following if only PCs
    if(!"G5" %in% names(Guse)) stop("Guse is a list without a G5")
    Guse <- Guse$G5

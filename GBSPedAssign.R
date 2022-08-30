@@ -1,6 +1,11 @@
 #!/bin/echo Source me don't execute me 
-pedver <- "1.0.3"
+pedver <- "1.1.0"
 cat("GBS-PedAssign for KGD version:",pedver,"\n")
+
+  verif.ch <- c(".","Y","N")  # NA, Y, N
+   assign.rank <<- c("Y","I","B","A","E","F","M","N")
+#   assign.pch <- c(16,2,6,1,15,13,13,4)
+   assign.pch <<- c(16,2,6,1,15,70,77,4)
 
 # assume all in pedfile are in the genotype results. To do: remove those that are not
 pedsetup <- function() {
@@ -172,14 +177,17 @@ parmatch <- function(partype, Gmatrix, pedinfo) {
   rel.threshpar <- ifelse(partype == "Father", rel.threshF,rel.threshM)
   ParMatch <- (ParRel > rel.threshpar & ParEMM < emm.thresh)
   noffsp <- length(offspringpos)
-  relrange <- seq(min(ParRel,na.rm=TRUE),max(ParRel,na.rm=TRUE),diff(range(ParRel,na.rm=TRUE))/20)
-  emmrange <- seq(min(ParEMM,na.rm=TRUE),max(ParEMM,na.rm=TRUE),diff(range(ParEMM,na.rm=TRUE))/20)
-  png(paste0(partype, "Verify.png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
-   nthresh <- length(c(relrange,emmrange))
-   plotch <- c(rep(1,noffsp),rep(46,nthresh)) # circles, dots for thresholds
-   pairs(cbind(c(ParRel, relrange,rep(rel.threshpar, length(emmrange))),c(ParEMM, rep(emm.thresh,length(relrange)),emmrange), c(offspringpos, rep(NA,nthresh)), c(parpos, rep(NA,nthresh))), 
-         labels = c("Relatedness", "EMM", "Offspring order", paste(partype, "order")), gap=0, pch=plotch)
-   dev.off()
+  tempch <- verif.ch[match(ParMatch, c(NA,TRUE,FALSE))]
+  if(any(!is.na(ParRel))) {
+   relrange <- seq(min(ParRel,na.rm=TRUE),max(ParRel,na.rm=TRUE),diff(range(ParRel,na.rm=TRUE))/20)
+   emmrange <- seq(min(ParEMM,na.rm=TRUE),max(ParEMM,na.rm=TRUE),diff(range(ParEMM,na.rm=TRUE))/20)
+   png(paste0(partype, "Verify.png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
+    nthresh <- length(c(relrange,emmrange))
+    plotch <- c(rep(1,noffsp),rep(46,nthresh)) # circles, dots for thresholds
+    pairs(cbind(c(ParRel, relrange,rep(rel.threshpar, length(emmrange))),c(ParEMM, rep(emm.thresh,length(relrange)),emmrange), c(offspringpos, rep(NA,nthresh)), c(parpos, rep(NA,nthresh))), 
+          labels = c("Relatedness", "EMM", "Offspring order", paste(partype, "order")), gap=0, pch=plotch)
+    dev.off()
+   }
   ncompare <- sum(!is.na(ParMatch))
   nmatch <- sum(ParMatch, na.rm = TRUE)
   matchperc <- 100 * nmatch/ncompare
@@ -188,9 +196,34 @@ parmatch <- function(partype, Gmatrix, pedinfo) {
     cat("Mean relatedness for", partype, "matches", format(mean(ParRel[which(ParMatch)]), digits = 3), "\n")
   if (ncompare > nmatch) 
     cat("Mean relatedness for", partype, "non-matches", format(mean(ParRel[which(!ParMatch)]), digits = 3), "\n")
-  matchinfo <- data.frame(ParRel, ParEMM, ParMatch)
-  names(matchinfo) <- paste0(partype, c("Rel", "EMM", "Match"))
-  cbind(pedinfo, matchinfo)
+  ParInb <- diag(Gmatrix)[parpos] - 1
+  matchinfo <- data.frame(ParRel, ParEMM, ParMatch,ParInb)
+  names(matchinfo) <- paste0(partype, c("Rel", "EMM", "Match","Inb"))
+  pedinfo <- cbind(pedinfo, matchinfo)
+  tempinfo <- pedinfo; tempinfo[,paste0(partype, "rel")] <- tempinfo[,paste0(partype, "Rel")]
+  parEplot(partype,ParEMM,tempinfo[,paste0(partype, "Rel")],matchtype="Rec",
+     plotcol=fcolo[match(pedinfo$seqID,seqID)],relthresh=rel.threshpar) 
+
+  png(paste0("ExpMM-Rec", partype, ".png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+   plot(Parmm$mmrate ~ Parmm$exp.mmrate , main = paste("Rec", partype, "Matches"), xlab = "Expected mismatch rate", 
+       ylab = "Raw mismatch rate",col=fcolo[match(pedinfo$seqID,seqID)], cex=0.8, pch=tempch)
+#   legend("bottomright",title="Verify",cex=0.75,pch=verif.pch,legend=c("","Y","N")
+   abline(a=0,b=1,col="red")
+   abline(a=emm.thresh,b=1,col="grey")
+   edges <- par("usr") # xl,xr,yb,yt
+   poly1 <- data.frame(x1 = c(edges[1], edges[1], edges[2],edges[2],edges[1]), 
+                       y1 = c(emm.thresh+edges[1],edges[4],edges[4],emm.thresh+edges[2],emm.thresh+edges[1]))
+   polygon(poly1,col = rgb(0,0,0,alpha=0.1),border=NA) 
+   dev.off()
+
+  if(developer) {
+   Exprel <- 0.5 + pedinfo$Inb + ParInb/2   # par-offspr rel from theory
+   reldevn <- ParRel - Exprel
+   lmrel <- lm(ParRel ~ pedinfo$Inb + ParInb )
+   print(summary(lmrel))
+   reldevplots(partype,ParEMM,reldevn,matchtype="Rec",gmatch=tempinfo,Exprelvar=Exprel,plotcol=fcolo[match(pedinfo$seqID,seqID)],plotch=1) 
+   }
+  pedinfo
 }
 
 bestmatch <- function(ospos, parpos, Guse, partype, matchcriterion = "rel", groupname=group, pedinfo) {
@@ -278,9 +311,9 @@ bestmatesmatch <- function(ospos, matespos, Guse, matchcriterion = "rel", pedinf
   out.df
 }
 
-parEplot <- function(partype,EMMvar,relvar,plotcol="black",relthresh=rel.thresh,emmthresh=emm.thresh) {
-      png(paste0("Best", partype, "MatchesE.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
-      plot(EMMvar ~ relvar, main = paste("Best", partype, "Matches"), xlab = "Estimated Relatedness", 
+parEplot <- function(partype,EMMvar,relvar,matchtype="Best",plotcol="black",relthresh=rel.thresh,emmthresh=emm.thresh) {
+      png(paste0(matchtype, partype, "MatchesE.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+      plot(EMMvar ~ relvar, main = paste(matchtype, partype, "Matches"), xlab = "Estimated Relatedness", 
           ylab = "Excess mismatch rate",col=plotcol, cex=0.8)
       abline(v=relthresh, col="grey")
       abline(h=emmthresh, col="grey")
@@ -291,15 +324,15 @@ parEplot <- function(partype,EMMvar,relvar,plotcol="black",relthresh=rel.thresh,
       dev.off()
  }
 
-reldevplots <- function(partype,EMMvar,relvar,gmatch,Exprelvar,plotcol="black",plotch=1) { 
-      png(paste0("Best", partype, "MatchesDE.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
-       plot(EMMvar ~ relvar, main = paste("Best", partype, "Matches"), xlab = "Relatedness Deviation", 
+reldevplots <- function(partype,EMMvar,relvar,matchtype="Best",gmatch,Exprelvar,plotcol="black",plotch=1) { 
+      png(paste0(matchtype, partype, "MatchesDE.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+       plot(EMMvar ~ relvar, main = paste(matchtype, partype, "Matches"), xlab = "Relatedness Deviation", 
            ylab = "Excess mismatch rate",col=plotcol, cex=0.8)
        abline(v=rel.thresh-0.5, col="grey")
        abline(h=emm.thresh, col="grey")
        dev.off()
-      png(paste0("Best", partype, "MatchesExprel.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
-       plot(gmatch[, paste0(partype, "rel")] ~ Exprelvar, pch=plotch, main = paste("Best", partype, "Matches"),
+      png(paste0(matchtype, partype, "MatchesExprel.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+       plot(gmatch[, paste0(partype, "rel")] ~ Exprelvar, pch=plotch, main = paste(matchtype, partype, "Matches"),
           xlab="Expected relatedness using estimated Inbreeding", ylab="Estimated relatedness")
        abline(a=0,b=1,col="red")
        abline(h=0.5,col="red",lty=2)
@@ -649,6 +682,8 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
   pedinfo <- suppressWarnings(read.csv(pedfile, stringsAsFactors = FALSE, colClasses=c(FatherGroup="character", MotherGroup="character")))
   pedinfo <- pedinfo[!is.na(pedinfo$seqID), ]
   pedinfo <- pedinfo[!is.na(match(pedinfo$seqID, seqID[indsubset])), ]
+  uo <- match(pedinfo$seqID,seqID)
+  pedinfo$Inb <- diag(eval(parse(text = GCheck)))[uo] - 1
   dupids <- which(duplicated(pedinfo$IndivID))
   if(length(dupids)>0) cat("Warning: dupicates in IndivID",pedinfo$IndivID[dupids],"\n")
   dupids <- which(duplicated(pedinfo$seqID))
@@ -667,26 +702,43 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       umiss <- which(pedinfo$MotherID == "")
       if (length(umiss) > 0) pedinfo$MotherID[umiss] <- NA
     }
+    tempch <- verif.ch[match(pedinfo$FandMmatch, c(NA,TRUE,FALSE))]
+    png(paste0("ExpMM-RecBoth.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
+     plot(Par2mm$mmrate ~ Par2mm$exp.mmrate, main = paste("Rec Parent Matches"), xlab = "Expected mismatch rate", 
+         ylab = "Raw mismatch rate",col=fcolo[match(pedinfo$seqID,seqID)], pch=tempch, cex=0.8)
+     abline(a=0,b=1,col="red")
+     abline(a=emm.thresh2,b=1,col="grey")
+#     legend("bottomright",title="Assign",cex=0.75,pch=assign.pch[pch.used],legend=assign.rank[pch.used])
+     edges <- par("usr") # xl,xr,yb,yt
+     poly1 <- data.frame(x1 = c(edges[1], edges[1], edges[2],edges[2],edges[1]), 
+                         y1 = c(emm.thresh2+edges[1],edges[4],edges[4],emm.thresh2+edges[2],emm.thresh2+edges[1]))
+     polygon(poly1,col = rgb(0,0,0,alpha=0.1),border=NA) 
+     dev.off()
+
+    famnumber <- rep(NA, nrow(pedinfo))
+    if(is.character(pedinfo$FatherID)) pedinfo$FatherID[pedinfo$FatherID==""] <- NA
+    if(is.character(pedinfo$MotherID)) pedinfo$MotherID[pedinfo$MotherID==""] <- NA
     famtable <- with(pedinfo, table(FatherID, MotherID))
     fampos <- which(famtable > 1, arr.ind = TRUE)
-    famfathers <- dimnames(famtable)$FatherID[fampos[, 1]]
-    fammothers <- dimnames(famtable)$MotherID[fampos[, 2]]
-    if (is.numeric(pedinfo$FatherID)) 
-      famfathers <- as.numeric(famfathers)
-    if (is.numeric(pedinfo$FatherID)) 
-      famfathers <- as.numeric(famfathers)
-    noffspring <- famtable[fampos]
-    nfamilies <- length(noffspring)
-    famnumber <- rep(NA, nrow(pedinfo))
-    famresults <- rep(NA, nfamilies)
-    for (ifam in 1:nfamilies) {
-      famnumber[which(pedinfo$FatherID == famfathers[ifam] & pedinfo$MotherID == fammothers[ifam])] <- ifam
-      uoffspring <- match(pedinfo$seqID[which(famnumber == ifam)], seqID[indsubset])
-      famresults[ifam] <- mean(eval(parse(text = GCheck))[uoffspring, uoffspring][upper.tri(diag(nrow = length(uoffspring)))])
-    }
-    cat("Mean relatedness for full-sib families (as given)\n")
-    print(data.frame(famfathers, fammothers, noffspring, meanrel = famresults))
-    cat("Mean relatedness within all full-sib families", weighted.mean(famresults, noffspring), "\n")
+    if(nrow(fampos)>0) {
+     famfathers <- dimnames(famtable)$FatherID[fampos[, 1]]
+     fammothers <- dimnames(famtable)$MotherID[fampos[, 2]]
+     if (is.numeric(pedinfo$FatherID)) 
+       famfathers <- as.numeric(famfathers)
+     if (is.numeric(pedinfo$FatherID)) 
+       famfathers <- as.numeric(famfathers)
+     noffspring <- famtable[fampos]
+     nfamilies <- length(noffspring)
+     famresults <- rep(NA, nfamilies)
+     for (ifam in 1:nfamilies) {
+       famnumber[which(pedinfo$FatherID == famfathers[ifam] & pedinfo$MotherID == fammothers[ifam])] <- ifam
+       uoffspring <- match(pedinfo$seqID[which(famnumber == ifam)], seqID[indsubset])
+       famresults[ifam] <- mean(eval(parse(text = GCheck))[uoffspring, uoffspring][upper.tri(diag(nrow = length(uoffspring)))])
+       }
+     cat("Mean relatedness for full-sib families (as given)\n")
+     print(data.frame(famfathers, fammothers, noffspring, meanrel = famresults))
+     cat("Mean relatedness within all full-sib families", weighted.mean(famresults, noffspring), "\n")
+     }
     
     uoffspring <- which(!is.na(famnumber))
     Fatherset <- unique(na.omit(pedinfo$FatherID))
@@ -701,9 +753,6 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
   }
   outobj$pedinfo <- pedinfo
   write.csv(pedinfo, "PedVerify.csv", row.names = FALSE)
-   assign.rank <<- c("Y","I","B","A","E","F","M","N")
-#   assign.pch <- c(16,2,6,1,15,13,13,4)
-   assign.pch <<- c(16,2,6,1,15,70,77,4)
 
   if (exists("matesfile")) if(!file.exists(matesfile)) {
    cat("Warning: Mates file", matesfile, "not found\n")

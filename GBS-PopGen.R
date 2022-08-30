@@ -1,4 +1,4 @@
-PopGenver <- "1.0.3"
+PopGenver <- "1.1.0"
 cat("GBS-PopGen for KGD version:",PopGenver,"\n")
 
 heterozygosity <- function(indsubsetgf=1:nind,snpsubsetgf=1:nsnps,maxiter=100,convtol=0.001){
@@ -188,6 +188,25 @@ popG <- function(Guse, populations, diag=FALSE) {
  colnames(popSelf) <- "Inbreeding"
  list(G=popG, Inb = popSelf-1)
  }
+
+DAPC.GBS <- function(Guse,populations=NULL, n.pca=NULL, perc.pca=90) {
+    if(!require(MASS)) stop("MASS library is required")
+    if(is.null(populations)) stop("(currently) need populations to be specified")
+    PC <- svd(scale(Guse, scale=FALSE))
+    eval <- sign(PC$d) * PC$d^2/sum(PC$d^2)
+    varexpl = 100* cumsum(eval)/sum(eval)
+    cat("minimum eigenvalue: ", min(eval), "\n") 
+    if(is.null(n.pca)) n.pca= min(sum(varexpl < perc.pca) + 1, length(eval))
+    neprint <- min(2*n.pca,length(eval))
+    cat("first",neprint,"eigenvalues:",eval[1:neprint],"\n")
+    cat("using",n.pca,"principal components\n")
+    PC$x <- PC$u[,1:n.pca] %*% diag(PC$d[1:n.pca],nrow=n.pca)  # nrow to get correct behaviour when npc=1
+    ldaPC <- lda(PC$x, populations, tol=1e-30) 
+    ldaPC$x <- PC$x %*% ldaPC$scaling
+    #alternatively predict(ldaPC)$x (also has $class and $posterior)
+    ldaPC
+} 
+
 
 manhatplot <- function(value, chrom, pos, plotname, qdistn=qunif, keyrot=0, symsize=0.8, legendm = NULL, ...) {
  chromcol <- colourby(chrom)
