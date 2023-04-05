@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "1.1.0"
+KGDver <- "1.1.1"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
@@ -391,6 +391,7 @@ samp.remove <- function (samppos=NULL, keep=FALSE) {
     if(exists("depth")) depth <<- depth[-samppos, ]
     if(exists("genon")) genon <<- genon[-samppos,]
     if(exists("sampdepth")) sampdepth <<- sampdepth[-samppos]
+    if(exists("samples")) samples <<- samples[-samppos,]
     seqID <<- seqID[-samppos]
     nind <<- nind - length(samppos)
   }
@@ -404,6 +405,7 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
    if(exists("p")) p <<- p[-snppos]
    if(exists("depth")) depth <<- depth[, -snppos]
    if(exists("genon")) genon <<- genon[, -snppos]
+   if(exists("samples")) samples <<- samples[,-snppos]
    if(exists("chrom")) chrom <<- chrom[-snppos]
    if(exists("pos")) pos <<- pos[-snppos]
    if(exists("refalleles")) refalleles <<- refalleles[-snppos]
@@ -416,6 +418,21 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
      if (gform == "uneak") AFrq <<- AFrq[-snppos]
    }
   }
+ }
+
+negCreport <- function(negpos,removeneg=FALSE) {
+  if(length(negpos)>0) {
+    negCstats <- data.frame(seqID=seqID[negpos], callrate= 1 - rowSums(depth[negpos,,drop=FALSE] == 0)/nsnps, sampdepth=rowMeans(depth[negpos,,drop=FALSE]), stringsAsFactors = FALSE)
+    write.csv(negCstats, "negCStats.csv", row.names = FALSE)
+    removetxt <- ""; if(removeneg) removetxt <- "removed"
+    cat(length(negpos),"Negative controls", removetxt,"\n  mean call rate = ",mean(negCstats$callrate), 
+                       "\n  max  call rate = ",max(negCstats$callrate),
+                       "\n  mean depth = ",mean(negCstats$sampdepth),
+                       "\n  max  depth = ",max(negCstats$sampdepth), "\n")
+   if(removeneg) samp.remove(negpos)
+   negCstats
+   } else
+  invisible(NULL)
  }
 
 HWpops <- function(snpsubset, indsubset, populations=NULL, depthmat = depth) {
@@ -614,6 +631,7 @@ calcp <- function(indsubset, pmethod="A") {
  if(exists("depth")) if(any(depth==Inf)) pmethod <- "G"
  if (pmethod == "A") {
   if (nrow(alleles) == nind) {
+   if(any(alleles==Inf)) alleles <- pmin(alleles,2) # alleles not repaced in parent env  # perhaps a bit approx? only use if genon not available
    RAcountstemp <- matrix(colSums(alleles[indsubset,,drop=FALSE]), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
    afreqs <- RAcountstemp[, 1]/rowSums(RAcountstemp)  # p for ref allele - based on # reads, not on inferred # alleles
    } else {
@@ -632,25 +650,15 @@ GBSsummary <- function() {
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
 #  storage.mode(depth) <- "integer"
-  if (nchar(negC) > 0) { # check and report negative controls
-   uneg <- do.call(grep,c(list(negC,seqID),negCsettings))
-   if(length(uneg) > 0 ) {
-    negCstats <<- data.frame(seqID=seqID[uneg], callrate= 1 - rowSums(depth[uneg,,drop=FALSE] == 0)/nsnps, sampdepth=rowMeans(depth[uneg,,drop=FALSE]), stringsAsFactors = FALSE)
-    write.csv(negCstats, "negCStats.csv", row.names = FALSE)
-    if(length(uneg)>0) cat(length(uneg),"Negative controls removed\n  mean call rate = ",mean(negCstats$callrate), 
-                       "\n  max  call rate = ",max(negCstats$callrate),
-                       "\n  mean depth = ",mean(negCstats$sampdepth),
-                       "\n  max  depth = ",max(negCstats$sampdepth), "\n")
-   samp.remove(uneg)
-    }
-   }
-  if (have_rcpp) {
+  if (nchar(negC) > 0) negCstats <<- negCreport(negpos=do.call(grep,c(list(negC,seqID),negCsettings)),removeneg=TRUE) # check and report negative controls
+  if (have_rcpp & storage.mode(depth)=="integer") {
    sampdepth.max <- rcpp_rowMaximums(depth, nThreads)
-  }
-  else {
+   } else {
    sampdepth.max <- apply(depth, 1, max)
   }
   sampdepth <<- rowMeans(depth)
+  depthinfo <- TRUE; if(min(depth)==Inf) depthinfo <- FALSE
+  if(depthinfo) write.csv(data.frame(seqID, sampdepth), "SampleStatsRaw.csv", row.names = FALSE)
   u0 <- which(sampdepth.max == 0)
   u1 <- setdiff(which(sampdepth.max == 1 | sampdepth < sampdepth.thresh), u0)
   nmax0 <- length(u0)
@@ -730,10 +738,9 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
  sampdepth <<- rowMeans(depth)  # recalc after removing SNPs and samples
  #if(outlevel > 4) sampdepth.med <<- apply(depth, 1, median)
  if(outlevel > 4) {
-   if (have_rcpp) {
+   if (have_rcpp & storage.mode(depth)=="integer") {
      sampdepth.med <<- rcpp_rowMedians(depth, nThreads)
-   }
-   else {
+   } else {
      sampdepth.med <<- apply(depth, 1, median)
    }
  }
@@ -751,7 +758,6 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
   # suggested by Jaroslav Klapste (Scion) 
   hist(SNPcallrate, seq(0,1,0.02), col = "cornflowerblue", border = "cornflowerblue", main = "Histogram of SNP call rates", xlab = "Call rate (proportion of samples scored)")
   dev.off()
- depthinfo <- TRUE; if(min(depth)==Inf) depthinfo <- FALSE
  if (!depthinfo) write.csv(data.frame(seqID, callrate), "SampleStats.csv", row.names = FALSE)
  if (depthinfo) {
   write.csv(data.frame(seqID, callrate, sampdepth), "SampleStats.csv", row.names = FALSE)
@@ -919,6 +925,20 @@ changecol <- function(colobject,colposition,newcolour) {# provide new colours to
  colobject
  }
 
+
+# fade (Lumley+)
+fade <- function(colors,alpha) {
+  if(alpha <= 1) alpha <- alpha*255
+  rgbcols <- col2rgb(colors)
+  rgb(rgbcols[1,],rgbcols[2,],rgbcols[3,],alpha,max=255)
+  }
+# fadeco fade a colour object (based on Lumley's fade)
+fadeco <- function(colobject,alpha) {
+  colobject$collist <- fade(colobject$collist, alpha)
+  colobject$sampcol <- fade(colobject$sampcol, alpha)
+  colobject
+  }
+
 coloursub <- function(colobj, indsubset) {
  #subset a colour object
  if(missing(indsubset)) indsubset <- 1:length(colobj$sampcol)
@@ -972,9 +992,21 @@ colkey <- function(colobj, sfx="", srt.lab=0, plotch=16, horiz = TRUE, freq=FALS
  dev.off()
  }
 
-collegend <- function(colobj,legpos="topleft", plotx=NULL, ploty=NULL, cex.leg=0.9) {
+# fade (Lumley+)
+fade <- function(colors,alpha) {
+  if(alpha <= 1) alpha <- alpha*255
+  rgbcols <- col2rgb(colors)
+  rgb(rgbcols[1,],rgbcols[2,],rgbcols[3,],alpha,max=255)
+  }
+# fadeco fade a colour object (based on Lumley's fade)
+fadeco <- function(colobj,alpha) {
+  colobj$collist <- fade(colobj$collist, alpha)
+  colobj$sampcol <- fade(colobj$sampcol, alpha)
+  colobj
+  }
+
+collegend <- function(colobj,legpos="topleft", plotx=NULL, ploty=NULL, cex.leg=0.9, legendsym =1) {
      # being tested
-     legendsym <- 1  #default value
      if (length(unique(colobj$symblist))==1) legendsym <- colobj$symblist[1] else
      if(length(colobj$symblist) == length(colobj$collist)) if(
          length(colobj$collist) == qr(model.matrix(~ colobj$sampcol +  as.factor(colobj$sampsymb)))$rank) legendsym <- colobj$symblist
@@ -1148,7 +1180,7 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
  if(snpreport) list(posCstats=posCstats, snpstats=snpstats) else posCstats
  }
 
-mergeSamples <- function(mergeIDs, indsubset, replace=FALSE) {  
+mergeSamples <- function(mergeIDs, indsubset, replace=FALSE, IDouttype=1) {  
  # doesn't do samples0, so cant do G3 
  if (missing(indsubset)) indsubset <- 1:nind
  mergeIDs <- mergeIDs[indsubset]
@@ -1177,12 +1209,42 @@ mergeSamples <- function(mergeIDs, indsubset, replace=FALSE) {
  nseq <- rowsum(rep(1,length(indsubset)),mergeIDs)[,1] # results being merged
  seqID.m <- seqID[indsubset][match(ID.m,mergeIDs)]
  seqinfo <- read.table(text=seqID[indsubset][match(ID.m,mergeIDs)],sep="_",fill=TRUE,stringsAsFactors=FALSE)
- if(ncol(seqinfo)==5) { #Assume formated as ID_Flowcell_Lane_plate_X and return ID_merged_nsamples_0_X
-  umerged <- which(nseq>1)
-  seqinfo[umerged,2] <- "merged"
+ ncolseqi <- ncol(seqinfo)
+ seqinfo <- seq2samp(seqID[indsubset][match(ID.m,mergeIDs)],nparts=ncolseqi,dfout=TRUE)  # redo to allow _ in SampleID (assumes ncolseqi found correctly)
+ umerged <- which(nseq>1)
+ if(IDouttype==1 & ncolseqi==5) { #Assume formated as ID_Flowcell_Lane_plate_X and return ID_merged_nsamples_0_X
+  seqinfou <- read.table(text=seqID[indsubset],sep="_",fill=TRUE,stringsAsFactors=FALSE)
+  seqIDfcu <- seq2samp(unique(paste(seqinfou[,1],seqinfou[,2],sep="_")))
+  seqID1fc <- seqIDfcu[which(!duplicated(seqIDfcu) & !duplicated(seqIDfcu,fromLast=TRUE)) ]
+  #seqinfo[umerged,2] <- "merged"
+  seqinfo[which(!seqinfo[,1] %in% seqID1fc),2] <- "X"  # non-unique flowcell
   seqinfo[umerged,3] <- nseq[umerged]
   seqinfo[umerged,4] <- 0
+  seqinfo[umerged,5] <- "merged"
   seqID.m <- paste(seqinfo[,1],seqinfo[,2],seqinfo[,3],seqinfo[,4],seqinfo[,5],sep="_")
+  }
+ if(IDouttype==2) {
+  seqinfou <- seq2samp(seqID[indsubset],nparts=ncolseqi,dfout=TRUE)  # before merge
+  nmIDs <- length(unique(mergeIDs))
+  keeppart <- rep(1,ncolseqi)  
+  for(ii in 2:ncolseqi) if(length(unique(paste(mergeIDs,seqinfou[,ii],sep="_"))) > nmIDs) keeppart[ii] <- 0 # always leave first column
+  upartblank <- which(keeppart==0)
+  if(length(upartblank)>1) for(ii in 2:length(upartblank)) seqinfo[,upartblank[ii]] <- 0
+  if(length(upartblank)>0) {
+   seqinfo[,upartblank[1]] <- "merged"
+   seqID.m <- seqinfo[,1]; for(ii in 2:ncolseqi) seqID.m <- paste(seqID.m,seqinfo[,ii],sep="_")
+   }
+  }
+ if(IDouttype==3) {
+  seqinfou <- seq2samp(seqID[indsubset],nparts=ncolseqi,dfout=TRUE)  # before merge
+  seqID.m <- seqinfo[,1]
+  for(ii in 2:ncolseqi) {
+   IDmc <- seq2samp(unique(paste(mergeIDs,seqinfou[,ii],sep="_")),nparts=2) # merge ID and seqinfo column. nparts allows _ in merge ID
+#  find mergeIDs have unique values for current column and then leave column as is, other ones set column to X or 0
+   IDc <- IDmc[which(!duplicated(IDmc) & !duplicated(IDmc,fromLast=TRUE)) ]  
+   if(mode(seqinfo[,ii])=="numeric") seqinfo[which(!ID.m %in% IDc),ii] <- 0 else seqinfo[which(!ID.m %in% IDc),ii] <- "X"    # non-unique 
+   seqID.m <- paste(seqID.m,seqinfo[,ii],sep="_")
+   }
   }
  if(hasg) mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
  if(alleles.keep & hasg) mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth = depth.m, alleles=alleles.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
@@ -1426,10 +1488,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    hist(upper.vec(cocall)/nsnpsub, breaks = 50, xlab = "Co-call rate (for sample pairs)", main="", col = "grey")
    dev.off()
   lowpairs <- which(cocall/nsnpsub <= cocall.thresh & upper.tri(cocall),arr.ind=TRUE)
-  if (have_rcpp) {
+  if (have_rcpp & storage.mode(depthsub)=="integer") {
     sampdepth.max <- rcpp_rowMaximums(depthsub, nThreads)
-  }
-  else {
+    }  else {
     sampdepth.max <- apply(depthsub, 1, max)
   }
   samp.removed <- NULL
@@ -1873,7 +1934,7 @@ GRMPCA <- function(Guse, PCobj=NULL, npc=2, npcxtra=0, pcasymbol=0, plotname="PC
     }
    plotargs <- list(cex = 0.6, xlab = xlab0, ylab = ylab0)
    plotargs[names(ellipsislist)] <- ellipsislist
-   png(paste0(plotname,"1v2", plotsfx, ".png"), width = 640*cex.plotsize, height = 640*cex.plotsize, pointsize = cex.pointsize *cex.plotsize *  15)
+   png(paste0(plotname,"1v2", plotsfx, ".png"), width = 640*cex.plotsize, height = 640*cex.plotsize, pointsize = cex.pointsize * 15)
    if(npc > 1) {
 #     plot(PC$x[, 2] ~ PC$x[, 1], cex = 0.6, col = pcacolo, pch = pcasymbol, ... ,
 #          xlab = xlab0, ylab = ylab0)
@@ -2028,7 +2089,7 @@ G5toDAWG <- function(Guse) {
 
 ##### functions for G matrix comparison 
 regpanel <- function(x,y,nvars=3, ...) {
- usr <- par("usr"); on.exit(par(usr))
+ usr <- par("usr"); on.exit(par(usr=usr))
  par(usr = c(0, 1, 0, 1))
  if(nvars==2)  par(usr = c(-1.5, 1, 0, 2.5))  # use lower RHS
  if(length(na.omit(x*y)) > 1 & var(x,na.rm=TRUE) > 0 & var(y,na.rm = TRUE)) {
@@ -2218,7 +2279,7 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   }
   else{
     if(is.null(CHROM)) CHROM <- SNP_Names
-    if(is.null(POS)) POS <- 1:nind
+    if(is.null(POS)) POS <- 1:nsnps
     out[,1] <- CHROM[snpsubset]
     out[,2] <- POS[snpsubset]
   }

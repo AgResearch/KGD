@@ -1,5 +1,5 @@
 #!/bin/echo Source me don't execute me 
-pedver <- "1.1.0"
+pedver <- "1.1.1"
 cat("GBS-PedAssign for KGD version:",pedver,"\n")
 
   verif.ch <- c(".","Y","N")  # NA, Y, N
@@ -29,13 +29,14 @@ pedsetup <- function() {
  if (!exists("puse")) puse <<- p
  if (!exists("nboot")) nboot <<- 1000  # for bootstrapping
  if (!exists("boot.thresh")) boot.thresh <<- 0.05 # rel diff for invoking bootstrapping
+ if (!exists("allow.selfing")) allow.selfing <<- FALSE # if FALSE find best parent pair without selfing
  cat("Parentage parameter settings\n----------------------------\n rel.threshF\t",rel.threshF,
      "\n rel.threshM\t",rel.threshM,
      "\n emm.thresh\t",emm.thresh,
      "\n emm.thresh2\t",emm.thresh2,
      "\n emmdiff.thresh2",emmdiff.thresh2,
      "\n mindepth.mm\t",mindepth.mm,
-     "\n inb.thresh\t",inb.thresh,"(parent relatedness v inbreeding)",
+     "\n inb.thresh\t",inb.thresh,"(parent relatedness - 2 * inbreeding)",
      "\n minr4inb\t",minr4inb,
      "\n boota.thresh\t",boota.thresh,
      "\n depth.min\t",depth.min,"(for bootstrapping)",
@@ -43,6 +44,7 @@ pedsetup <- function() {
      "\n nboot\t\t",nboot,
      "\n boot.thresh\t",boot.thresh,"(relatedness difference to invoke bootstrapping)",
      "\n matchmethod\t",matchmethod,
+     "\n allow.selfing\t",allow.selfing,
      "\n")
  if(length(indsubset) != nrow(eval(parse(text = GCheck)))) {
   OK4ped <<- FALSE
@@ -366,7 +368,7 @@ trioplots <- function(BothMatches) {
        title(sub="mean depth < 0.5",col.sub="grey75",adj=0.95,cex.sub=0.8)
        dev.off()
       png(paste0("ExpMM-Both.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
-       plot(mmrateF1M1 ~ exp.mmrateF1M1, data=BothMatches[uplot,], main = paste("Best Parent Matches"), xlab = "Expected mismatch rate", 
+       plot(mmrateF1M1 ~ exp.mmrateF1M1, data=BothMatches[uplot,,drop=FALSE], main = paste("Best Parent Matches"), xlab = "Expected mismatch rate", 
            ylab = "Raw mismatch rate",col=fcolo[uo][uplot], pch=plotch[uplot], cex=0.8)
        abline(a=0,b=1,col="red")
        abline(a=emm.thresh2,b=1,col="grey")
@@ -772,7 +774,7 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       }
      }
     if(nrow(BothMatches) > 0) {
-     BothMatches <- BothMatches[order(BothMatches$IndivID),]
+     BothMatches <- BothMatches[order(BothMatches$IndivID),,drop=FALSE]
      mmstats <- mismatch.2par(BothMatches$IndivID, BothMatches$BestFatherMatch, BothMatches$BestMotherMatch,pedinfo=pedinfo)
      BothMatches$mmrateF1M1 <- mmstats$mmrate
      BothMatches$mmnumF1M1 <- mmstats$ncompare
@@ -841,11 +843,48 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       }
      outobj$MotherMatches <- MotherMatches
      }
-    write.csv(groupsinfo, "GroupsParentCounts.csv", row.names = FALSE)
     if ("FatherGroup" %in% colnames(pedinfo) & "MotherGroup" %in% colnames(pedinfo)) {
      BothMatches <- merge(FatherMatches,MotherMatches,all=TRUE)
      if(nrow(BothMatches) > 0) {
-      BothMatches <- BothMatches[order(BothMatches$IndivID),]
+      BothMatches <- BothMatches[order(BothMatches$IndivID),,drop=FALSE]
+      if(!allow.selfing) {
+       uselfed <- with(BothMatches,which(BestFatherMatch==BestMotherMatch))
+       if(matchmethod=="EMM") { #whichbetter: 1 retain F1, 2 retain M1
+        whichbetter <- apply(with(BothMatches[uselfed,],cbind(mmrateMother2-exp.mmrateMother2,mmrateFather2-exp.mmrateFather2)),1,which.min)
+        } else { #rel method
+        whichbetter <- apply(with(BothMatches[uselfed,],cbind(Motherrel2nd,Fatherrel2nd)),1,which.max)
+        }
+       BothMatches$tempna <- NA
+       uchange <- which(whichbetter==2)
+       if(length(uchange)>0) {
+        new0 <- BothMatches[uselfed[uchange],c("FatherMatch2nd","tempna","Fatherrel2nd","tempna","tempna","mmrateFather2",
+                            "tempna","exp.mmrateFather2","tempna","tempna","tempna","tempna","tempna","tempna")]
+        changecols <- c("BestFatherMatch","FatherMatch2nd","Fatherrel","Fatherrel2nd","Father12rel","mmrateFather",
+                            "mmnumFather","exp.mmrateFather","mmrateFather2","exp.mmrateFather2","Fathersd","FatherReliability","FatherAssign","FatherInb")
+        colnames(new0) <- changecols
+        new0$FatherAssign <- "Y"
+        new0$FatherAssign[which(new0$mmrateFather - new0$exp.mmrateFather  > emm.thresh)] <- "E"
+        new0$FatherAssign[which(new0$Fatherrel  < rel.threshF)] <- "N"
+        new0$FatherAssign[which(is.na(new0$Fatherrel))] <- "N"
+        new0$FatherInb <- diag(eval(parse(text = GCheck)))[match(pedinfo$seqID[match(new0$BestFatherMatch, pedinfo$IndivID)], seqID[indsubset])] - 1
+        BothMatches[uselfed[uchange],changecols] <- new0
+        } 
+       uchange <- which(whichbetter==1)
+       if(length(uchange)>0) {
+        new0 <- BothMatches[uselfed[uchange],c("MotherMatch2nd","tempna","Motherrel2nd","tempna","tempna","mmrateMother2",
+                            "tempna","exp.mmrateMother2","tempna","tempna","tempna","tempna","tempna","tempna")]
+        changecols <- c("BestMotherMatch","MotherMatch2nd","Motherrel","Motherrel2nd","Mother12rel","mmrateMother",
+                            "mmnumMother","exp.mmrateMother","mmrateMother2","exp.mmrateMother2","Mothersd","MotherReliability","MotherAssign","MotherInb")
+        colnames(new0) <- changecols
+        new0$MotherAssign <- "Y"
+        new0$MotherAssign[which(new0$mmrateMother - new0$exp.mmrateMother  > emm.thresh)] <- "E"
+        new0$MotherAssign[which(new0$Motherrel  < rel.threshM)] <- "N"
+        new0$MotherAssign[which(is.na(new0$Motherrel))] <- "N"
+        new0$MotherInb <- diag(eval(parse(text = GCheck)))[match(pedinfo$seqID[match(new0$BestMotherMatch, pedinfo$IndivID)], seqID[indsubset])] - 1
+        BothMatches[uselfed[uchange],changecols] <- new0
+        } 
+       BothMatches$tempna <- NULL
+       }
       mmstats <- mismatch.2par(BothMatches$IndivID, BothMatches$BestFatherMatch, BothMatches$BestMotherMatch,pedinfo=pedinfo)
       BothMatches$mmrateF1M1 <- mmstats$mmrate
       BothMatches$mmnumF1M1 <- mmstats$ncompare
@@ -913,14 +952,14 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       trioplots(BothMatches=BothMatches)
       plotch <- assign.pch[match(BothMatches$BothAssign,assign.rank)]
       upairs <- which(!is.na(BothMatches$mmrateF1M1))
-      if(length(upairs)>0 & any(!is.na(rowSums(EMMrates[upairs,])))) {
+      if(length(upairs)>0 & any(!is.na(rowSums(EMMrates[upairs,,drop=FALSE])))) {
        png("MMrateBoth.png", width = 640, height = 640, pointsize = cex.pointsize *  15)
-        pairs(with(BothMatches[upairs,],cbind(mmrateF2M2,mmrateF1M2,mmrateF2M1,mmrateF1M1)),upper.panel=panel.yeqx,lower.panel=NULL,
+        pairs(with(BothMatches[upairs,,drop=FALSE],cbind(mmrateF2M2,mmrateF1M2,mmrateF2M1,mmrateF1M1)),upper.panel=panel.yeqx,lower.panel=NULL,
                   main="Raw Mismatch Rates", labels=c("Father2,\nMother2","Father1,\nMother2","Father2,\nMother1","Father1,\nMother1"),
                   col.points=fcolo[uo][upairs],pch=plotch[upairs])
         dev.off()
        png("MMrateBothE.png", width = 640, height = 640, pointsize = cex.pointsize *  15)
-        pairs(EMMrates[upairs,], main="Excess Mismatch Rates", labels=c("Father2,\nMother2","Father1,\nMother2","Father2,\nMother1","Father1,\nMother1"),
+        pairs(EMMrates[upairs,,drop=FALSE], main="Excess Mismatch Rates", labels=c("Father2,\nMother2","Father1,\nMother2","Father2,\nMother1","Father1,\nMother1"),
                   upper.panel=panel.yeqx,lower.panel=NULL,col.points=fcolo[uo][upairs],pch=plotch[upairs])
         dev.off()
       }
@@ -928,6 +967,7 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       print( addmargins(table(BothMatches$BothAssign, useNA="ifany")) )
       }
      }
+    write.csv(groupsinfo, "GroupsParentCounts.csv", row.names = FALSE)
   }
  }
  invisible(outobj)
