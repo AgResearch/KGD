@@ -1,12 +1,13 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "1.1.1"
+KGDver <- "1.1.2"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
 if (!exists("genofile"))         genofile         <- "HapMap.hmc.txt"
 if (!exists("sampdepth.thresh")) sampdepth.thresh <- 0.01
 if (!exists("snpdepth.thresh"))  snpdepth.thresh  <- 0.01
+if (!exists("maf.thresh"))       maf.thresh       <- 1e-9
 if (!exists("hirel.thresh"))     hirel.thresh     <- 0.9
 if (!exists("iemm.thresh"))      iemm.thresh      <- 0.05
 if (!exists("triallelic.thresh")) triallelic.thresh <- 0.005  # if third allele present in higher than this proportion, then discard SNP, otherwise discard 3rd & 4th allele calls (currently only for ANGSD data)
@@ -350,11 +351,16 @@ parkGBS <- function() {
     alleles[,seq(2, 2 * nsnps, 2)] <- tempalleles
   }
  parkeddata <- list(nsnps=nsnps,SNP_Names=SNP_Names, seqID = seqID, nind=nind, alleles = alleles) 
+ if(exists("AFrq")) parkeddata <- append(parkeddata,list(AFrq=AFrq))
+ parkeddata
  }
 
 activateGBS <- function(GBSobj) {
+ if(!is.null(GBSobj)) {
  nsnps <<- GBSobj$nsnps; SNP_Names <<- GBSobj$SNP_Names; seqID <<- GBSobj$seqID; nind <<- GBSobj$nind; alleles <<- GBSobj$alleles
+ if("AFrq" %in% names(GBSobj)) AFrq <<- GBSobj$AFrq
  if(exists("depth")) rm(depth, p, genon, inherits=TRUE)
+ } else cat("GBSobj is invalid\n")
  invisible(NULL)
  }
 
@@ -645,6 +651,7 @@ calcp <- function(indsubset, pmethod="A") {
  }
 
 GBSsummary <- function() {
+ depthinfo <- FALSE
  havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
  if(havedepth & !gform %in% c("VCF","chip")) cat("Warning: depth object already exists - reusing\n")
  if(gform != "chip") {
@@ -658,9 +665,10 @@ GBSsummary <- function() {
   }
   sampdepth <<- rowMeans(depth)
   depthinfo <- TRUE; if(min(depth)==Inf) depthinfo <- FALSE
-  if(depthinfo) write.csv(data.frame(seqID, sampdepth), "SampleStatsRaw.csv", row.names = FALSE)
+  ssraw <- data.frame(seqID, sampdepth); if (exists("negCstats")) ssraw <- rbind(negCstats[,c(1,3)],ssraw)
+  if(depthinfo) write.csv(ssraw, "SampleStatsRaw.csv", row.names = FALSE)
   u0 <- which(sampdepth.max == 0)
-  u1 <- setdiff(which(sampdepth.max == 1 | sampdepth < sampdepth.thresh), u0)
+  u1 <- setdiff(which(sampdepth.max == ifelse(sampdepth.thresh==0,0,1) | sampdepth < sampdepth.thresh), u0)
   nmax0 <- length(u0)
   nmax1 <- length(u1)
   seqID.removed <<- character(0)
@@ -712,9 +720,9 @@ GBSsummary <- function() {
   } #end GBS-specific
  write.csv(data.frame(seqID = seqID), "seqID.csv", row.names = FALSE)
  snpdepth <<- colMeans(depth)
- uremove <- which(p == 0 | p == 1 | is.nan(p) | snpdepth < snpdepth.thresh)
- nmaf0 <- length(which(p == 0 | p == 1))
- cat(nmaf0, "SNPs with MAF=0 and", length(uremove)-nmaf0, "SNPs with depth <", snpdepth.thresh, "removed\n")
+ uremove <- which(p < maf.thresh | p > 1-maf.thresh  | snpdepth < snpdepth.thresh)  # | is.nan(p)  # is this needed too? implies depth=0
+ nmaf0 <- length(which(p < maf.thresh | p > 1-maf.thresh))
+ cat(nmaf0, "SNPs with MAF <",maf.thresh,"and", length(uremove)-nmaf0, "SNPs with no data or with depth <", snpdepth.thresh, "removed\n")
  snp.remove(uremove)
 cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
 
@@ -959,7 +967,9 @@ coloursub <- function(colobj, indsubset) {
  }
 
 colkey <- function(colobj, sfx="", srt.lab=0, plotch=16, horiz = TRUE, freq=FALSE) {  # plot a key for colours
+ if(!exists("cex.pointsize")) cex.pointsize <- 1
  nlevels <- length(colobj$collabels)
+ is.raster <- is.numeric(colobj$collabels) & nlevels > 2
  legname1 <- ""; if(!is.null(colobj$col.name)) legname1 <- colobj$col.name
  legname2 <- ""; if(!is.null(colobj$symb.name)) legname2 <- colobj$symb.name
  longdim <- 480 + max(0,nlevels-20) * 10
@@ -974,20 +984,41 @@ colkey <- function(colobj, sfx="", srt.lab=0, plotch=16, horiz = TRUE, freq=FALS
   temptab <- table(colobj$sampsymb)
   if(freq) symbtext <- paste(symbtext, as.character(temptab[match(colobj$symblist,names(temptab))]), sep="\t")
   }
- if(horiz) {
-  png(paste0("ColourKey",sfx,".png"),height=240, width = longdim)
-  par(mar=0.1+c(1, 1, 1, 1))
-  plot( 1:nlevels, rep(1,nlevels),col=colobj$collist,pch=plotch, cex=1.5,ylab="", axes=FALSE,xlab="", xpd=NA, ylim=c(0,1),xlim=c(0,nlevels))
-  text(labels=c(legname1,labtext),x=(0:nlevels)+0.4,y=0.9,srt=srt.lab,pos=2,xpd=TRUE)
-  if(dosymb) legend(x=nlevels/2,y=0.85,legend=symbtext,col="black",pch=colobj$symblist,ncol=length(colobj$symblist),
+ if(is.raster) {
+  png(paste0("ColourKey",sfx,".png"),height=480, width=240, pointsize=12*cex.pointsize)
+   par(mar=0.1+c(1, 1, 1, 1))
+   plot( x=c(0,2),y=c(0,1) ,type="n",ylab="", axes=FALSE,xlab="")
+   legend_image <- as.raster(matrix(rev(colobj$collist), ncol = 1))
+   rasterImage(legend_image, 0,0,1,1)
+   rticks <- pretty(colobj$collabels,10)
+   rticks <- rticks[rticks < max(colobj$collabels) & rticks > min(colobj$collabels)]
+   #rticks <- rticks[2:(length(rticks)-1)]
+   nbars <- length(colobj$collist)
+   rast0 <- 0.5/nbars
+   rasth <- (nbars-1)/nbars  # height between end mid-points
+   lines(x=rep(1+0.4,2),y=c(rast0,rast0+rasth))
+   rtickss <- (rticks - min(colobj$collabels))/diff(range(colobj$collabels))
+   for(itick in seq_along(rticks)){
+    lines(x=c(1.4,1.43),y=rep(rast0+rtickss[itick]*rasth,2))
+    text(x=1+0.45, y= rast0+rtickss[itick]*rasth, labels=format(rticks)[itick],adj=c(0,0.5), cex=0.8)
+    }
+   if(!is.na(colobj$col.name)) text(x=1+0.3,y=1, labels=colobj$col.name, xpd=NA, adj=c(0.5,0), cex=1.2)
+  } else { # not raster
+  if(horiz ) {
+   png(paste0("ColourKey",sfx,".png"),height=240, width = longdim, pointsize=12*cex.pointsize)
+   par(mar=0.1+c(1, 1, 1, 1))
+   plot( 1:nlevels, rep(1,nlevels),col=colobj$collist,pch=plotch, cex=1.5,ylab="", axes=FALSE,xlab="", xpd=NA, ylim=c(0,1),xlim=c(0,nlevels))
+   text(labels=c(legname1,labtext),x=(0:nlevels)+0.4,y=0.9,srt=srt.lab,pos=2,xpd=TRUE)
+   if(dosymb) legend(x=nlevels/2,y=0.85,legend=symbtext,col="black",pch=colobj$symblist,ncol=length(colobj$symblist),
         bty="n", xjust=0.5, pt.cex=1.5, xpd=NA, title=legname2)
-  } else {
-  png(paste0("ColourKey",sfx,".png"),width=240, height = longdim)
-  par(mar=0.1+c(1, 1, 1, 1))
-  plot( rep(0,nlevels),nlevels:1, col=colobj$collist,pch=plotch, cex=1.5,ylab="", axes=FALSE,xlab="", xpd=NA, xlim=c(0,1),ylim=c(1,nlevels+1))
-  text(labels=c(labtext[nlevels:1],legname1),y=1:(nlevels+1),x=0.1,pos=4,srt=srt.lab,xpd=TRUE)
-  if(dosymb) legend(y=nlevels/2, x=0.2 + max(strwidth(labtext)),legend=symbtext,col="black",pch=colobj$symblist,
+   } else {
+   png(paste0("ColourKey",sfx,".png"),width=240, height = longdim, pointsize=12*cex.pointsize)
+   par(mar=0.1+c(1, 1, 1, 1))
+   plot( rep(0,nlevels),nlevels:1, col=colobj$collist,pch=plotch, cex=1.5,ylab="", axes=FALSE,xlab="", xpd=NA, xlim=c(0,1),ylim=c(1,nlevels+1))
+   text(labels=c(labtext[nlevels:1],legname1),y=1:(nlevels+1),x=0.1,pos=4,srt=srt.lab,xpd=TRUE)
+   if(dosymb) legend(y=nlevels/2, x=0.2 + max(strwidth(labtext)),legend=symbtext,col="black",pch=colobj$symblist,
         bty="n", yjust=0.5, pt.cex=1.5, xpd=NA, title=legname2)
+   }
   }
  dev.off()
  }
@@ -1302,7 +1333,8 @@ mergeSamples2 <- function(mergeIDs, indsubset) {
  list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
  }
 
-plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,negcol="grey", colpal = hcl.colors(80,palette="YlGnBu", rev=TRUE)) {
+plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,negcol="grey", focusinfo, focuscol="black",
+             colpal = hcl.colors(80,palette="YlGnBu", rev=TRUE)) {
  if(vardesc=="") vardesc <- as.character(substitute(plotvar))
  infonames <- names(plateinfo)
  if(!"row"  %in% infonames | ! "column" %in% infonames) stop("row and/or column not in plateinfo")
@@ -1318,6 +1350,19 @@ plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,ne
     if(length(thisrow) == 1 & length(thiscol)==1) { # only for rows and cols in the main plate plot.
      lines(y=c(thisrow-3/2, thisrow-1/2)/(maxrow-1),x=c(thiscol-3/2,thiscol-1/2)/(maxcol-1),col=negcol)
      lines(y=c(thisrow-1/2, thisrow-3/2)/(maxrow-1),x=c(thiscol-3/2,thiscol-1/2)/(maxcol-1),col=negcol)
+     }
+    }
+   }
+  }
+
+ markfocus <- function(focuscol=focuscol) {
+  if(nrow(focusinfo) > 0) {
+   for (ifocus in 1:nrow(focusinfo)) {
+    thisrow <- which(rownames(zmat)==focusinfo$row[ifocus])
+    thiscol <- which(colnames(zmat)==focusinfo$column[ifocus])
+    if(length(thisrow) == 1 & length(thiscol)==1 & !is.na(zmat[thisrow,thiscol])) { # only for rows and cols in the main plate plot.
+     lines(y=c(thisrow-3/2, thisrow-3/2, thisrow-1/2, thisrow-1/2, thisrow-3/2)/(maxrow-1),
+           x=c(thiscol-3/2, thiscol-1/2, thiscol-1/2, thiscol-3/2, thiscol-3/2)/(maxcol-1),col=focuscol, lwd=2)
      }
     }
    }
@@ -1359,6 +1404,7 @@ plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,ne
   axis(1,at=(0:(ncol(zmat)-1))/(max(2,ncol(zmat))-1),labels=colnames(zmat),cex.axis=0.8)
   axis(2,at=(0:(nrow(zmat)-1))/(max(2,nrow(zmat))-1),labels=rownames(zmat),cex.axis=0.8)
   if(!missing(neginfo)) markneg(negcol=negcol)
+  if(!missing(focusinfo)) markfocus(focuscol=focuscol)
   addlegend(plotvar=as.numeric(zmat), main=vardesc)
   dev.off()
 
@@ -1373,6 +1419,7 @@ plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,ne
    axis(1,at=(0:(ncol(zmat)-1))/(max(2,ncol(zmat))-1),labels=colnames(zmat),cex.axis=0.8)
    axis(2,at=(0:(nrow(zmat)-1))/(max(2,nrow(zmat))-1),labels=rownames(zmat),cex.axis=0.8)
    if(!missing(neginfo)) markneg(negcol=negcol)
+   if(!missing(focusinfo)) markfocus(focuscol=focuscol)
    addlegend(plotvar=plotvar, main=vardesc, colpalette=colpalgray, subid=subplateids, subcol=subplatecols)
    dev.off()
   }
@@ -1448,8 +1495,8 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   # puse - determine whether global or indiv specifc
   if(is.matrix(puse)) {  # allows matrix puse to be specified relative to all or subsetted data
    cat("Using individual allele frequencies\n")
-   if(ncol(puse) == nsnps & nsnps > nsnpsub) puse <- puse[,snpsubset]
-   if(nrow(puse) == nind & nind > nindsub) puse <- puse[indsubset,]
+   if(ncol(puse) == nsnps & nsnps > nsnpsub) puse <- puse[,snpsubset, drop=FALSE]
+   if(nrow(puse) == nind & nind > nindsub) puse <- puse[indsubset,,drop=FALSE]
    } else {
    cat("Using global allele frequencies\n")
    if(length(puse) == nsnps & nsnps > nsnpsub) puse <- puse[snpsubset]
@@ -1464,16 +1511,16 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    cat("Warning:", npusena,"SNPs with NA allele frequencies were removed\n")
    snpsubset <- snpsubset[-pusena]
    pusecheck <- pusecheck[-pusena]
-   puse <- puse[,-pusena]
+   puse <- puse[,-pusena,drop=FALSE]
    }
   if(any(pusecheck == 0 | pusecheck == 1 ) ) cat("Warning: Some MAFs are 0\n")
-  depthsub <- depth[indsubset, snpsubset]
+  depthsub <- depth[indsubset, snpsubset, drop=FALSE]
   
   cat("# SNPs: ", nsnpsub, "\n")
   cat("# individuals: ", nindsub, "\n")
-  genon0 <- genon[indsubset, snpsubset]
-  usegeno <- !is.na(genon[indsubset, snpsubset])
-  if(samptype=="pooled") raf <- 2 * alleles[indsubset, seq(1, 2 * nsnps - 1, 2)][,snpsubset] / depthsub  # ref allele freq x 2 (keep on 0-2 scale)
+  genon0 <- genon[indsubset, snpsubset, drop=FALSE]
+  usegeno <- !is.na(genon[indsubset, snpsubset, drop=FALSE])
+  if(samptype=="pooled") raf <- 2 * alleles[indsubset, seq(1, 2 * nsnps - 1, 2), drop=FALSE][,snpsubset, drop=FALSE] / depthsub  # ref allele freq x 2 (keep on 0-2 scale)
   if (depth.min > 1 | depth.max < Inf) {
     depthsub[depthsub < depth.min] <- 0
     depthsub[depthsub > depth.max] <- 0
@@ -1517,9 +1564,10 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     dev.off()
     }
   samplesOK <- exists("samples")
+  if(samplesOK) if(!is.matrix(samples)) samplesOK <- FALSE
   if(samplesOK) if(nrow(samples) != nind | any(is.na(samples[depth>0]))) samplesOK <- FALSE
   if (!gform == "chip" & calclevel > 2 & outlevel > 7 & samplesOK) {
-   samples0 <- samples[indsubset, snpsubset] - 2 * puse
+   samples0 <- samples[indsubset, snpsubset, drop=FALSE] - 2 * puse
    samples0[is.na(genon0)] <- 0
    }
   genon0 <- genon0 - 2 * puse
@@ -1566,7 +1614,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     rcpp_assignP0P1Genon01(P0, P1, genon01, usegeno, depthsub, d4i, nThreads)
   }
   else {
-    genon01[depth[indsubset, snpsubset] < d4i] <- 0
+    genon01[depth[indsubset, snpsubset, drop=FALSE] < d4i] <- 0
     P0[!usegeno | depthsub < d4i] <- 0
     P1[!usegeno | depthsub < d4i] <- 0
   }
@@ -1605,9 +1653,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    npc <- sign(npc) * min(abs(npc),nsnpsub,length(pcasamps))
    if (npc > 0) {
      if (samptype=="pooled") {
-      temp <- sqrt(Gpool[pcasamps,pcasamps] - min(Gpool[pcasamps,pcasamps], na.rm = TRUE))
+      temp <- sqrt(Gpool[pcasamps,pcasamps, drop=FALSE] - min(Gpool[pcasamps,pcasamps, drop=FALSE], na.rm = TRUE))
       } else {
-      temp <- sqrt(GGBS5[pcasamps,pcasamps] - min(GGBS5[pcasamps,pcasamps], na.rm = TRUE))
+      temp <- sqrt(GGBS5[pcasamps,pcasamps, drop=FALSE] - min(GGBS5[pcasamps,pcasamps, drop=FALSE], na.rm = TRUE))
       }
      if(withHeatmaply){
        if(length(table(plotly.group)) > 1) {
@@ -1713,9 +1761,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     ### PCA analysis on GGBS5 or Gpooled
     pcasymbol <- 1; if(length(pcasamps) < 100) pcasymbol <- 16
     if(samptype=="pooled") {
-     PC <- svd(Gpool[pcasamps,pcasamps] - matrix(colMeans(Gpool[pcasamps,pcasamps]), nrow = length(pcasamps), ncol = length(pcasamps), byrow = TRUE), nu = npc)
+     PC <- svd(Gpool[pcasamps,pcasamps, drop=FALSE] - matrix(colMeans(Gpool[pcasamps,pcasamps, drop=FALSE]), nrow = length(pcasamps), ncol = length(pcasamps), byrow = TRUE), nu = npc)
      } else {
-     PC <- svd(GGBS5[pcasamps,pcasamps] - matrix(colMeans(GGBS5[pcasamps,pcasamps]), nrow = length(pcasamps), ncol = length(pcasamps), byrow = TRUE), nu = npc)
+     PC <- svd(GGBS5[pcasamps,pcasamps, drop=FALSE] - matrix(colMeans(GGBS5[pcasamps,pcasamps, drop=FALSE]), nrow = length(pcasamps), ncol = length(pcasamps), byrow = TRUE), nu = npc)
      } 
     eval <- sign(PC$d) * PC$d^2/sum(PC$d^2)
     PC$x <- PC$u %*% diag(PC$d[1:npc],nrow=npc)  # nrow to get correct behaviour when npc=1
@@ -1784,11 +1832,11 @@ calcGdiag <- function(snpsubset, puse, indsubset, depth.min = 0, depth.max = Inf
   d4i <- 1.001  # min depth to use in inbreeding calcs. Anything in (1,2] OK for normal data, but a low value used in case effective depth (non-integer) being used
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
-  depthsub <- depth[indsubset, snpsubset]
+  depthsub <- depth[indsubset, snpsubset,drop=FALSE]
   if(is.matrix(puse)) {  # allows matrix puse to be specified relative to all or subsetted data
    if(!quiet) cat("Using individual allele frequencies\n")
-   if(ncol(puse) == nsnps & nsnps > nsnpsub) puse <- puse[,snpsubset]
-   if(nrow(puse) == nind & nind > nindsub) puse <- puse[indsubset,]
+   if(ncol(puse) == nsnps & nsnps > nsnpsub) puse <- puse[,snpsubset,drop=FALSE]
+   if(nrow(puse) == nind & nind > nindsub) puse <- puse[indsubset,,drop=FALSE]
    } else {
    if(!quiet) cat("Using global allele frequencies\n")
    if(length(puse) == nsnps & nsnps > nsnpsub) puse <- puse[snpsubset]
@@ -1799,8 +1847,8 @@ calcGdiag <- function(snpsubset, puse, indsubset, depth.min = 0, depth.max = Inf
   if(!quiet) cat("Calculating G diags\n")
   if(!quiet) cat("# SNPs: ", nsnpsub, "\n")
   if(!quiet) cat("# individuals: ", nindsub, "\n")
-  genon0 <- genon[indsubset, snpsubset]
-  usegeno <- !is.na(genon[indsubset, snpsubset])
+  genon0 <- genon[indsubset, snpsubset, drop=FALSE]
+  usegeno <- !is.na(genon[indsubset, snpsubset, drop=FALSE])
   if (depth.min > 1 | depth.max < Inf) {
     depthsub[depthsub < depth.min] <- 0
     depthsub[depthsub > depth.max] <- 0
@@ -1817,7 +1865,7 @@ calcGdiag <- function(snpsubset, puse, indsubset, depth.min = 0, depth.max = Inf
   P0[!usegeno | depthsub < d4i] <- 0
   P1[!usegeno | depthsub < d4i] <- 0
   div0 <- 2 * rowSums(P0 * P1)
-  Kdepth <- depth2K(depth[indsubset, snpsubset])
+  Kdepth <- depth2K(depth[indsubset, snpsubset, drop=FALSE])
   GGBS5d <- 1 + rowSums((genon01^2 - 2 * P0 * P1 * (1 + 2*Kdepth))/(1 - 2*Kdepth))/div0
 }
 
@@ -2396,6 +2444,7 @@ genderassign <- function(ped.df, index_Y_SNPs, index_X_SNPs, sfx="", hetgamsex =
  cat("Gender Prediction\n")
  cat(length(index_Y_SNPs), hetchrom,"chromosome SNPs\n")
  cat(length(index_X_SNPs), homchrom,"chromosome SNPs\n")
+ if(!"seqID" %in% names(ped.df)) stop("seqID not in ped.df")
  genopos <- match(ped.df$seqID,seqID)
 
  #proporton of SNPs an individual has on the Y chromosome
