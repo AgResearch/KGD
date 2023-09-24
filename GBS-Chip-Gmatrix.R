@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "1.1.2"
+KGDver <- "1.1.3"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
@@ -240,6 +240,7 @@ readANGSD <- function(genofilefn0 = genofile) {
    adpos = unlist(apply(tempformats=="AD",1,which))
    genon <<- matrix(NA,nrow=nind,ncol=nsnps)
    if(any(gthave)) {
+    cat("(Initially) reading genotypes from GT field\n")
     tempgt <- read.table(text=as.matrix(vcfin[gthave,-(1:formatcol)]),sep=":",fill=TRUE,stringsAsFactors=FALSE)[matrix(c(1:(nind*sum(gthave)),rep(gtpos,nind)),ncol=2,dimnames=list(NULL,c("row","col")))]
     tempgt[tempgt=="."] <- "./."
     genongt <- t(matrix(rowSums(read.table(text=gsub("/","|",tempgt),sep="|",na.strings=".")),nrow=sum(gthave)))
@@ -247,6 +248,7 @@ readANGSD <- function(genofilefn0 = genofile) {
     }
    depth <<- matrix(Inf, nrow = nind, ncol = nsnps)
    if(any(adhave)) {
+    cat("Reading allelic depths from AD field\n")
     tempad <- read.table(text=as.matrix(vcfin[adhave,-(1:formatcol)]),sep=":",fill=TRUE,stringsAsFactors=FALSE)[matrix(c(1:(nind*sum(adhave)),rep(adpos,nind)),ncol=2,dimnames=list(NULL,c("row","col")))]
     tempad2 <- read.table(text=sub(".","0,0",sub(".,.","0,0",tempad,fixed=TRUE),fixed=TRUE),sep=",")
     ref <- t(matrix(tempad2[,1],nrow=sum(adhave)))
@@ -257,9 +259,11 @@ readANGSD <- function(genofilefn0 = genofile) {
     alleles[,seq(1, 2 * nsnps - 1, 2)[which(adhave)]] <<- ref
     alleles[,seq(2, 2 * nsnps, 2)[which(adhave)]] <<- alt
     depth[,which(adhave)] <<- ref + alt
+    p <<- calcp()
+    } else {
+    p <<- colMeans(genon, na.rm = TRUE)/2 # same as pg further down
     }
    depth[is.na(genon)] <<- 0
-   p <<- colMeans(genon, na.rm = TRUE)/2 # same as pg further down
    if(!any(adhave)) gform <- "chip"
    }
   invisible(NULL)
@@ -275,6 +279,7 @@ readChip <- function(genofilefn0 = genofile) {
    genost <- scan(genofilefn0,what="",skip=1,sep=",", quote="", quiet=TRUE) # read as text ... easier to pull out elements than list of nsnps+1
    snpnums <- ((1:length(genost))-1) %% (nsnps+1)
    genon <<- matrix(as.numeric(genost[which(snpnums !=0)]) ,ncol=nsnps,byrow=TRUE)
+   genon[genon >2 | genon <0] <- NA
    seqID <<-  genost[which(snpnums ==0)]
    nind <<- length(seqID)
    cat("Data file has", nind, "samples \n")
@@ -392,8 +397,9 @@ joinGBS <- function(join1, join2=NULL, replace=TRUE, uniqueSNPs=FALSE) {
 samp.remove <- function (samppos=NULL, keep=FALSE) {
  if(keep) samppos <- setdiff(1:nind,samppos)
  if(length(samppos)>0) {
-    if(gform != "chip") alleles <<- alleles[-samppos, ]
-    if(gform == "chip" & exists("alleles") & alleles.keep) alleles <- alleles[-samppos,]
+   # if(gform != "chip") alleles <<- alleles[-samppos, ]
+   # if(gform == "chip" & exists("alleles") & alleles.keep) alleles <<- alleles[-samppos,]
+    if(exists("alleles")) alleles <<- alleles[-samppos,]
     if(exists("depth")) depth <<- depth[-samppos, ]
     if(exists("genon")) genon <<- genon[-samppos,]
     if(exists("sampdepth")) sampdepth <<- sampdepth[-samppos]
@@ -869,7 +875,7 @@ seq2samp <- function(seqIDvec=seqID, splitby="_",nparts=NULL,dfout=FALSE, ...){
 }
 
 
-colourby <- function(colgroup, nbreaks=0, col.name=NULL, symbgroup=NULL, symb.name=NULL,groupsort=FALSE,maxlight=1,alpha=1,reverse=FALSE,symbset=NULL,
+colourby <- function(colgroup, nbreaks=0, col.name=NULL, symbgroup=NULL, symb.name=NULL,groupsort=FALSE,grouporder=NULL, maxlight=1,alpha=1,reverse=FALSE,symbset=NULL,
             hclpals=character(0),pal.upper=1, nacolour="black") {
  #maxlight is maximum lightness between 0 and 1
  #nbreaks is suggested # breaks
@@ -878,11 +884,12 @@ colourby <- function(colgroup, nbreaks=0, col.name=NULL, symbgroup=NULL, symb.na
  if(isgroups) {
   collabels <- unique(colgroup)
   if(groupsort) collabels <- sort(collabels,na.last=TRUE)
+  if(!is.null(grouporder)) if(length(grouporder)==length(collabels)) collabels <- collabels[grouporder]
   }
  if(!isgroups) {
   histinfo <- hist(colgroup,nbreaks,plot=FALSE)
   collabels <- histinfo$mids
-  colgroup <- collabels[cut(colgroup,breaks = histinfo$breaks, labels=FALSE)]  # redefine input
+  colgroup <- collabels[cut(colgroup,breaks = histinfo$breaks, labels=FALSE, include.lowest=TRUE)]  # redefine input
   }
  ncol <- length(collabels)
  collist <- rainbow(ncol)
@@ -1169,7 +1176,7 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
   posCstats <- rbind(posCstats, data.frame(mergeID=thisID,nresults=nresults,selfrel=selfrel,meanrel=meanrel,minrel=minrel,
                      meandepth=meandepth,mindepth=mindepth,meanCR=meanCR,mmrate=mmrate,exp.mmrate =exp.mmrate, IEMM = IEMM, stringsAsFactors=FALSE))
   ulorel <- which( ((thisG < 1 & thisG - selfrel <= hirel.thresh - 1) | mmmat-expmmmat>iemm.thresh) & upper.tri(thisG), arr.ind = TRUE)
-  if (nrow(ulorel) > 0) print(data.frame(Indiv1 = seqIDtemp[thispos[ulorel[, 1]]], Indiv2 = seqIDtemp[thispos[ulorel[, 2]]], rel = thisG[ulorel],
+  if (nrow(ulorel) > 0) print(data.frame(mergeID=thisID, Indiv1 = seqIDtemp[thispos[ulorel[, 1]]], Indiv2 = seqIDtemp[thispos[ulorel[, 2]]], rel = thisG[ulorel],
                         depth1 = thisdepth[ulorel[, 1]],depth2 = thisdepth[ulorel[, 2]], IEMM = (mmmat-expmmmat)[ulorel]))
   }
  sink()
@@ -1211,26 +1218,46 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
  if(snpreport) list(posCstats=posCstats, snpstats=snpstats) else posCstats
  }
 
-mergeSamples <- function(mergeIDs, indsubset, replace=FALSE, IDouttype=1) {  
+rowsum2 <- function(x,group,reorder=TRUE, ...) {
+  # piecewise implementation of rowsum for large matrices
+  maxsize <- 2^31-1
+  grouplevs <- unique(group)
+  if(reorder) grouplevs <- sort(grouplevs)
+  nlevs <- as.numeric(length(grouplevs))  # force to numeric instead of integer
+  outsize <- nlevs * ncol(x)
+  nsplits <- ceiling(outsize/maxsize)
+  splitn <- ceiling(nlevs/nsplits)
+  #cat("Using",nsplits,"splits with nrows",nlevs,"ncols",ncol(x),"\n")
+  xout <- matrix(0,nrow=nlevs,ncol=ncol(x))
+  for(isplit in 1:nsplits) {
+   usplit <-  intersect((isplit-1)*splitn+(1:splitn),1:nlevs)
+   ux <- which(group %in% grouplevs[usplit])
+   xout[usplit,] <- rowsum(x[ux,],group[ux],reorder = reorder, ...)
+  }  
+  rownames(xout) <- grouplevs
+  xout
+}
+
+mergeSamples <- function(mergeIDs, indsubset, replace=FALSE, IDouttype=1, rowsumfn=rowsum2) {  
  # doesn't do samples0, so cant do G3 
  if (missing(indsubset)) indsubset <- 1:nind
  mergeIDs <- mergeIDs[indsubset]
  hasg <- exists("genon")
  if(hasg) {
-  aggr.msum <- rowsum(genon[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE)   # rowsum very fast
+  aggr.msum <- rowsumfn(genon[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE)   # rowsum very fast
   temp <- 1 * !is.na(genon[indsubset,,drop=FALSE])
-  aggr.mn <- rowsum(temp,mergeIDs) 
+  aggr.mn <- rowsumfn(temp,mergeIDs) 
 # aggr.mn <- rowsum(1 * !is.na(genon[indsubset,,drop=FALSE]),mergeIDs) 
   rm(temp)
   genon.m <- aggr.msum/aggr.mn
   genon.m <- trunc(genon.m-1)+1
-  depth.m <- rowsum(depth[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE)
+  depth.m <- rowsumfn(depth[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE)
   ID.m <- rownames(aggr.msum)
   sampdepth.m <- rowMeans(depth.m)
   snpdepth.m <- colMeans(depth.m)
   pg.m <- colMeans(genon.m, na.rm = TRUE)/2  # allele freq assuming genotype calls
   }
- if(alleles.keep | !hasg) alleles.m <- rowsum(alleles[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE) else alleles.m <- NULL
+ if(alleles.keep | !hasg) alleles.m <- rowsumfn(alleles[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE) else alleles.m <- NULL
  if(!hasg) ID.m <- rownames(alleles.m)
  nind.m <- length(ID.m)
  if(exists("SNPcallrate") & hasg) { #GBSsummary has been run
@@ -1302,35 +1329,52 @@ mergeSamples2 <- function(mergeIDs, indsubset) {
  singleIDs <- row.names(nseq)[nseq==1]
  usingle <- which(mergeIDs %in% singleIDs)
  umultiple <- setdiff(1:length(indsubset),usingle)
- aggr.msum <- rowsum(genon[indsubset[umultiple],,drop=FALSE],mergeIDs[umultiple],na.rm=TRUE)   # rowsum very fast
- temp <- 1 * !is.na(genon[indsubset[umultiple],,drop=FALSE])
- aggr.mn <- rowsum(temp,mergeIDs[umultiple]) 
-# aggr.mn <- rowsum(1 * !is.na(genon[indsubset,,drop=FALSE]),mergeIDs) 
- rm(temp)
- genon.m <- aggr.msum/aggr.mn
- genon.m <- trunc(genon.m-1)+1
- ID.m <- rownames(aggr.msum)
- depth.m <- rowsum(depth[indsubset[umultiple],,drop=FALSE],mergeIDs[umultiple],na.rm=TRUE)
- nind.m <- nrow(genon.m)
+ hasg <- exists("genon")
+ if(hasg) {
+  aggr.msum <- rowsum(genon[indsubset[umultiple],,drop=FALSE],mergeIDs[umultiple],na.rm=TRUE)   # rowsum very fast
+  temp <- 1 * !is.na(genon[indsubset[umultiple],,drop=FALSE])
+  aggr.mn <- rowsum(temp,mergeIDs[umultiple]) 
+ # aggr.mn <- rowsum(1 * !is.na(genon[indsubset,,drop=FALSE]),mergeIDs) 
+  rm(temp)
+  genon.m <- aggr.msum/aggr.mn
+  genon.m <- trunc(genon.m-1)+1
+  ID.m <- rownames(aggr.msum)
+  depth.m <- rowsum(depth[indsubset[umultiple],,drop=FALSE],mergeIDs[umultiple],na.rm=TRUE)
+  sampdepth.m <- rowMeans(depth.m)
+  }
+ if(alleles.keep | !hasg) alleles.m <- rowsum(alleles[indsubset,,drop=FALSE],mergeIDs,na.rm=TRUE) else alleles.m <- NULL
+ if(!hasg) ID.m <- rownames(alleles.m)
+ nind.m <- length(ID.m)
  seqID.m <- seqID[indsubset[umultiple]][match(ID.m,mergeIDs[umultiple])]
  seqinfo <- read.table(text=seqID.m ,sep="_",fill=TRUE,stringsAsFactors=FALSE)
  if(ncol(seqinfo)==5) { #Assume formated as ID_Flowcell_Lane_plate_X and return ID_merged_nsamples_0_X
   seqinfo[,2] <- "merged"
-  seqinfo[,3] <- nseq[nseq>1]
+  seqinfo[nseq>1,3] <- nseq[nseq>1]
   seqinfo[,4] <- 0
   seqID.m <- paste(seqinfo[,1],seqinfo[,2],seqinfo[,3],seqinfo[,4],seqinfo[,5],sep="_")
   }
  if(length(usingle) > 0) {
-  genon.m <- rbind(genon.m,genon[indsubset[usingle],,drop=FALSE])
   ID.m <- c(ID.m,mergeIDs[usingle])
-  depth.m <- rbind(depth.m,depth[indsubset[usingle],,drop=FALSE])
-  nind.m <- nind.m + length(usingle)
   seqID.m <- c(seqID.m,seqID[indsubset[usingle]])
+  nind.m <- nind.m + length(usingle)
+  if(hasg) {
+   genon.m <- rbind(genon.m,genon[indsubset[usingle],,drop=FALSE])
+   depth.m <- rbind(depth.m,depth[indsubset[usingle],,drop=FALSE])
+   sampdepth.m <- c(sampdepth.m,sampdepth[indsubset[usingle]])
+   snpdepth.m <- colMeans(depth.m)
+   pg.m <- colMeans(genon.m, na.rm = TRUE)/2  # allele freq assuming genotype calls
+   }
+  if(alleles.keep | !hasg) alleles.m <- rbind(alleles.m,alleles[indsubset[usingle],,drop=FALSE])
   }
- sampdepth.m <- rowMeans(depth.m)
- snpdepth.m <- colMeans(depth.m)
- pg.m <- colMeans(genon.m, na.rm = TRUE)/2  # allele freq assuming genotype calls
- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
+ if(exists("SNPcallrate") & hasg) { #GBSsummary has been run
+  callrate.m <- 1 - rowSums(depth.m == 0)/nsnps  # sample callrate, after removing SNPs, samples 
+  SNPcallrate.m <- 1 - colSums(depth.m == 0)/nind.m  
+  }
+ if(hasg) mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth = depth.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
+ if(alleles.keep & hasg) mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, genon=genon.m, depth = depth.m, alleles=alleles.m, sampdepth=sampdepth.m, snpdepth=snpdepth.m, pg=pg.m, nmerged=nseq)
+ if(!hasg) mergelist <- list(mergeIDs=ID.m, nind=nind.m, seqID=seqID.m, alleles=alleles.m, nmerged=nseq)
+ if(exists("SNPcallrate") & hasg) mergelist <- c(mergelist,list(callrate=callrate.m, SNPcallrate=SNPcallrate.m))
+ mergelist
  }
 
 plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,negcol="grey", focusinfo, focuscol="black",
@@ -1471,7 +1515,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
       addpixel = ifelse(any(!is.null(c(plotly.group,plotly.group2))),200,0) 
       # Some checks on the hove information for plotly
       if(missing(samp.info)){
-        if(!exists(seqID))
+        if(!exists("seqID"))
           samp.info <- list("Sample ID"=1:length(indsubset))
         else
           samp.info <- list("Sample ID"=seqID[indsubset])
@@ -1504,7 +1548,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    }
   if(!nrow(puse) == nindsub | !ncol(puse) == nsnpsub) stop("Dimensions of puse are incorrect.")
   #check for NA allele freqs
-  pusecheck <- colSums(puse)
+  pusecheck <- colMeans(puse)
   pusena <- which(is.na(pusecheck))
   npusena <- length(pusena)
   if(npusena > 0 ) {
@@ -1657,6 +1701,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
       } else {
       temp <- sqrt(GGBS5[pcasamps,pcasamps, drop=FALSE] - min(GGBS5[pcasamps,pcasamps, drop=FALSE], na.rm = TRUE))
       }
+     rownames(temp) <- colnames(temp) <- NULL  # force numbering on heatmap even if row/col names exist for G matrix
      if(withHeatmaply){
        if(length(table(plotly.group)) > 1) {
          temp_p <- heatmaply(x=round(temp,3), symm=TRUE, colors=rev(heat.colors(50)), hide_colorbar=TRUE,
@@ -2065,8 +2110,11 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
  samp.removed <- integer(0)
  if(isTRUE(outtype==0)) cat("Warning, no output will be produced \nSpecify outtype(s):\n 1 R datasets\n 2 G matrix\n 3 long G\n 4 inbreeding\n 5 t-SNE\n 6 PCA\n")
  if (is.list(Guse)) {
-  if("PC" %in% names(Guse)) {PCtemp <- Guse$PC; nindout <- nrow(PCtemp$x)}
-  if("samp.removed" %in% names(Guse)) {samp.removed <- Guse$samp.removed; nindout <- nindout+length(samp.removed)}
+  if("PC" %in% names(Guse)) {
+   PCtemp <- Guse$PC; 
+   nindout <- nrow(PCtemp$x)
+   if("samp.removed" %in% names(Guse)) {samp.removed <- Guse$samp.removed; nindout <- nindout+length(samp.removed)}
+   }
   if(any(outtype != 6)) { # ignore following if only PCs
    if(!"G5" %in% names(Guse)) stop("Guse is a list without a G5")
    Guse <- Guse$G5
@@ -2400,16 +2448,17 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
 
 writeGBS <- function(indsubset,snpsubset,outname="HapMap.hmc.txt",outformat=gform,seqIDuse=seqID) {
  written <- FALSE
+ if(missing(indsubset)) indsubset <- 1:nind
+ if(missing(snpsubset)) snpsubset <- 1:nsnps
+ if(length(seqIDuse) == nind) seqIDuse <- seqIDuse[indsubset]
+ if(outformat == "uneak") {
   if(!exists("alleles"))
     stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")
   else if(is.null(alleles))
     stop("Allele matrix object `alleles` is set to NULL.")
   if(nrow(alleles) != nind | ncol(alleles) != 2* nsnps) stop("Allele matrix does not correspond to genotype matrix")
-  if(missing(indsubset)) indsubset <- 1:nind
-  if(missing(snpsubset)) snpsubset <- 1:nsnps
   ref <- alleles[indsubset, seq(1, 2 * nsnps - 1, 2)[snpsubset]]
   alt <- alleles[indsubset, seq(2, 2 * nsnps, 2)[snpsubset]]
- if(outformat == "uneak") {
   depthsub <- ref + alt
   genonsub <- ref / depthsub
   genonsub <-  trunc(2*genonsub-1)+1
@@ -2422,10 +2471,22 @@ writeGBS <- function(indsubset,snpsubset,outname="HapMap.hmc.txt",outformat=gfor
   Count_allele2 <- colSums(alt)
   psub <- Count_allele1/(Count_allele1 + Count_allele2)
   outmtx <- matrix(paste(t(ref),t(alt),sep="|"),nrow=length(snpsubset),ncol=length(indsubset))
-  colnames(outmtx) <- seqIDuse[indsubset]
+  colnames(outmtx) <- seqIDuse
 #  colnames(outmtx) <- c("rs",seqIDuse[indsubset],"hetc1","hetc2","acount1","acount2","p")
-  write.table(cbind(rs=SNP_Names[snpsubset],outmtx,HetCount_allele1,HetCount_allele2,Count_allele1,Count_allele2,Frequency=round(psub,3)),
+  if(require("data.table")) fwrite(cbind(rs=SNP_Names[snpsubset],outmtx,HetCount_allele1,HetCount_allele2,Count_allele1,Count_allele2,Frequency=round(psub,3)),
+       outname, sep="\t") else
+    write.table(cbind(rs=SNP_Names[snpsubset],outmtx,HetCount_allele1,HetCount_allele2,Count_allele1,Count_allele2,Frequency=round(psub,3)),
        outname,row.names=FALSE,quote=FALSE,sep="\t")
+  written <- TRUE
+  } 
+ if(outformat == "chip") {
+  if(!exists("genon") | !exists("depth"))
+    stop("genon and/or depth matrix does not exist")
+  if(!all(depth==Inf | depth == 0)) cat("Warning: Some depths are not 0 or Inf\n")
+  genonsub <- genon[indsubset,snpsubset]
+  colnames(genonsub) <- SNP_Names[snpsubset]
+  if(require("data.table")) fwrite(cbind(seqID=seqIDuse,genonsub), outname) else
+    write.csv(cbind(seqID=seqIDuse,genonsub), outname,row.names=FALSE,quote=FALSE)
   written <- TRUE
   } 
  if(!written) cat("No file written output format not yet available\n")
