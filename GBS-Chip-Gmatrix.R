@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "1.1.3 Update5"
+KGDver <- "1.2.0"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
