@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "1.1.3"
+KGDver <- "1.1.3 Update5"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
@@ -162,7 +162,7 @@ readTD <- function(genofilefn0 = genofile, skipcols=0) {
    }
   if(!nogenos) {
    if (havedt) {
-    if ( packageVersion("data.table") < "1.12" & isgzfile) {
+    if ( (packageVersion("data.table") < "1.12" | !require("R.utils")) & isgzfile) {
      genosin <- fread(paste("gunzip -c",genofilefn0),sep=",",header=TRUE,showProgress=FALSE)
      } else {    
      genosin <- fread(genofilefn0,sep=",",header=TRUE)
@@ -661,7 +661,8 @@ GBSsummary <- function() {
  havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
  if(havedepth & !gform %in% c("VCF","chip")) cat("Warning: depth object already exists - reusing\n")
  if(gform != "chip") {
-  if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2)] + alleles[, seq(2, 2 * nsnps, 2)]
+  if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2),drop=FALSE] + alleles[, seq(2, 2 * nsnps, 2),drop=FALSE]
+  if(is.null(dim(depth))) depth <<- matrix(depth,nrow=nind,ncol=nsnps)
 #  storage.mode(depth) <- "integer"
   if (nchar(negC) > 0) negCstats <<- negCreport(negpos=do.call(grep,c(list(negC,seqID),negCsettings)),removeneg=TRUE) # check and report negative controls
   if (have_rcpp & storage.mode(depth)=="integer") {
@@ -890,7 +891,7 @@ colourby <- function(colgroup, nbreaks=0, col.name=NULL, symbgroup=NULL, symb.na
   histinfo <- hist(colgroup,nbreaks,plot=FALSE)
   collabels <- histinfo$mids
   colgroup <- collabels[cut(colgroup,breaks = histinfo$breaks, labels=FALSE, include.lowest=TRUE)]  # redefine input
-  }
+  } else collabels <- as.character(collabels)
  ncol <- length(collabels)
  collist <- rainbow(ncol)
  if(ncol > 8) collist[seq(2,ncol,2)] <-  rgb((t(col2rgb(collist[seq(2,ncol,2)]))+matrix(127,ncol=3,nrow=floor(ncol/2)))/2,maxColorValue = 255)  # darken every 2nd one
@@ -1009,7 +1010,7 @@ colkey <- function(colobj, sfx="", srt.lab=0, plotch=16, horiz = TRUE, freq=FALS
     lines(x=c(1.4,1.43),y=rep(rast0+rtickss[itick]*rasth,2))
     text(x=1+0.45, y= rast0+rtickss[itick]*rasth, labels=format(rticks)[itick],adj=c(0,0.5), cex=0.8)
     }
-   if(!is.na(colobj$col.name)) text(x=1+0.3,y=1, labels=colobj$col.name, xpd=NA, adj=c(0.5,0), cex=1.2)
+   if(!is.null(colobj$col.name)) text(x=1+0.3,y=1, labels=colobj$col.name, xpd=NA, adj=c(0.5,0), cex=1.2)
   } else { # not raster
   if(horiz ) {
    png(paste0("ColourKey",sfx,".png"),height=240, width = longdim, pointsize=12*cex.pointsize)
@@ -1094,7 +1095,7 @@ collegend <- function(colobj,legpos="topleft", plotx=NULL, ploty=NULL, cex.leg=0
 
 
 ### calculate expected identity mismatch rate given observed geno & depths of indiv1 and depths of indiv2
-mismatch.ident <- function(seqid1, seqid2,snpsubset=1:nsnps, puse=p, mindepth.mm=1) {
+mismatch.ident <- function(seqid1, seqid2,snpsubset=1:nsnps, puse=p, mindepth.mm=1, inbreed=0) {
   if(mindepth.mm < 1) mindepth.mm <- 1
   pos1 <- match(seqid1, seqID)
   pos2 <- match(seqid2, seqID)
@@ -1113,20 +1114,21 @@ mismatch.ident <- function(seqid1, seqid2,snpsubset=1:nsnps, puse=p, mindepth.mm
   P <- ptemp*(1-ptemp)
   expmm <- rep(NA,length(usnp))
   ug <- which(pi==1)
-  if(length(ug)>0) expmm[ug] <- 2 * P[ug] * K1[ug] * (1 - K2[ug]) / (ptemp[ug]^2+2*P[ug]*K1[ug])
+  if(length(ug)>0) expmm[ug] <- 2 * P[ug] * (1-inbreed) * K1[ug] * (1 - K2[ug]) / 
+                  (ptemp[ug]^2 +P[ug]*inbreed + 2*P[ug]*(1-inbreed)*K1[ug])
   ug <- which(pi==0.5)
   if(length(ug)>0) expmm[ug] <- 2 * K2[ug] 
   ug <- which(pi==0)
-  if(length(ug)>0) expmm[ug] <- 2 * P[ug] * (1 - K1[ug]) * K2[ug] / ((1-ptemp[ug])^2+2*P[ug]*K1[ug])
+  if(length(ug)>0) expmm[ug] <- 2 * P[ug] * (1-inbreed) * (1 - K1[ug]) * K2[ug] / 
+                 ((1-ptemp[ug])^2 +P[ug]*inbreed +2*P[ug]*(1-inbreed)*K1[ug])
   exp.mmrate <- mean(expmm,na.rm=TRUE)
   mmrate <- nmismatch/ncompare
   snpmmstats <- data.frame(mm=logical(nsnps),expmm=numeric(nsnps)); snpmmstats[,] <- NA
   snpmmstats[usnp,1] <- mismatched; snpmmstats[usnp,2] <- pmin(expmm,rep(1,ncompare))  # why can expmm be >1 ?
   list(mmrate=mmrate,ncompare=ncompare,exp.mmrate=exp.mmrate,snpmmstats=snpmmstats)
-}
+} 
 
-
-posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:nsnps,puse=p, snpreport=FALSE, quiet=FALSE) {
+posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:nsnps,puse=p, snpreport=FALSE, inbreed.method="ignore", quiet=FALSE) {
  if (missing(Gindsubset)) Gindsubset <- 1:nind
  if (missing(indsubset)) indsubset <- 1:nrow(Guse)
  havedepth <- exists("sampdepth")
@@ -1139,6 +1141,7 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
  posCstats <- data.frame(mergeID=character(0),nresults=integer(0),selfrel=numeric(0),meanrel=numeric(0),minrel=numeric(0),
               meandepth=numeric(0),mindepth=numeric(0),meanCR=numeric(0),mmrate=numeric(0),exp.mmrate=numeric(0),EMM=numeric(0),stringsAsFactors=FALSE)
  meandepth <- mindepth <- meanCR <- mmrate <- exp.mmrate <- IEMM <- NA
+ inbreeduse <- 0  # default
  sink(paste0("posCchecks",sfx,".txt"),split=!quiet)
  snpstats <- data.frame(snpcount = integer(nsnps), snpmm=integer(nsnps), expmm=numeric(nsnps))
  for (i in seq_along(multiIDs)) {
@@ -1159,8 +1162,10 @@ posCreport <- function(mergeIDs,Guse,sfx = "",indsubset,Gindsubset,snpsubset=1:n
   #emmstats <- data.frame(mmrate=numeric(0),exp.mmrate=numeric(0))
   mmmat <- expmmmat <- matrix(NA,nrow=nresults,ncol=nresults)
   if(length(snpsubset) > 0) {
+   if(grepl("mean",inbreed.method)) inbreeduse <- mean(diag(thisG))-1   # one value for all pairs "allmean" method
    for(ipos in 1:nresults) for (jpos in setdiff(1:nresults,ipos)) {
-    emmstatstemp <- mismatch.ident(seqIDtemp[thispos[ipos]],seqIDtemp[thispos[jpos]],snpsubset=snpsubset,puse=puse)  # do it both ways
+    if(grepl("all",inbreed.method)) inbreeduse <- (thisG[ipos,ipos]+thisG[jpos,jpos])/2 -1   # one value for each pair "pairmean" method
+    emmstatstemp <- mismatch.ident(seqIDtemp[thispos[ipos]],seqIDtemp[thispos[jpos]],snpsubset=snpsubset,puse=puse, inbreed=inbreeduse)  # do it both ways
     mmmat[ipos,jpos] <-emmstatstemp$mmrate
     expmmmat[ipos,jpos] <- emmstatstemp$exp.mmrate
     ucompare <- which(!is.na(emmstatstemp$snpmmstats$mm))
@@ -1573,12 +1578,17 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     if(samptype=="pooled") raf[depthsub==0] <- NA
     }
   cocall <- tcrossprod(usegeno)
-  cat("Mean co-call rate (for sample pairs):", mean(upper.vec(cocall)/nsnpsub), "\n")
-  cat("Min  co-call rate (for sample pairs):", min(upper.vec(cocall)/nsnpsub), "\n")
-  png(paste0("Co-call-", sfx, ".png"), pointsize = cex.pointsize * 12)
-   hist(upper.vec(cocall)/nsnpsub, breaks = 50, xlab = "Co-call rate (for sample pairs)", main="", col = "grey")
-   dev.off()
-  lowpairs <- which(cocall/nsnpsub <= cocall.thresh & upper.tri(cocall),arr.ind=TRUE)
+  if(nindsub==1) {
+   cat("Single individual - no cocall statistics available\n")
+   lowpairs <- which(cocall/nsnpsub <= cocall.thresh,arr.ind=TRUE)
+   } else {
+   cat("Mean co-call rate (for sample pairs):", mean(upper.vec(cocall)/nsnpsub), "\n")
+   cat("Min  co-call rate (for sample pairs):", min(upper.vec(cocall)/nsnpsub), "\n")
+   png(paste0("Co-call-", sfx, ".png"), pointsize = cex.pointsize * 12)
+    hist(upper.vec(cocall)/nsnpsub, breaks = 50, xlab = "Co-call rate (for sample pairs)", main="", col = "grey")
+    dev.off()
+   lowpairs <- which(cocall/nsnpsub <= cocall.thresh & upper.tri(cocall),arr.ind=TRUE)
+   }
   if (have_rcpp & storage.mode(depthsub)=="integer") {
     sampdepth.max <- rcpp_rowMaximums(depthsub, nThreads)
     }  else {
@@ -1695,7 +1705,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
     }
    pcacolo <- fcolo[indsubset[pcasamps]]
    npc <- sign(npc) * min(abs(npc),nsnpsub,length(pcasamps))
-   if (npc > 0) {
+   if (npc > 0 & length(pcasamps) > 1) {
      if (samptype=="pooled") {
       temp <- sqrt(Gpool[pcasamps,pcasamps, drop=FALSE] - min(Gpool[pcasamps,pcasamps, drop=FALSE], na.rm = TRUE))
       } else {
@@ -1785,7 +1795,7 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
      cat("Self-Rel vs log(depth) regression = ", signif(slipslope,3)," p = ",signif(pval,3)," (min depth = ",mindepth.idr,")\n",sep="")
      }
    }
-  if (calclevel %in% c(2,9)) {
+  if (calclevel %in% c(2,9) & nindsub > 1) {
    png(paste0("Gcompare", sfx, ".png"), width = 960, height = 960, pointsize = cex.pointsize *  18)
    if(samplesOK & gform != "chip" & calclevel > 2) midpair <- upper.vec(GGBS3) else midpair <- NULL
    if(samptype=="pooled") lastpair <- cbind(upper.vec(GGBS5),upper.vec(Gpool)) else lastpair <- upper.vec(GGBS5)
@@ -1925,6 +1935,27 @@ ssdInb <- function(dpar=Inf, dmodel="bb", Inbtarget,snpsubset,puse,indsubset,qui
  if(!quiet) cat(dmodel,"par = ",dpar,"ss = ",Inbss,"\n")
  Inbss
  }
+
+ssIEMM <- function(dpar=Inf, dmodel="bb",uind1,uind2, snpsubset, puse, inbreed.method="ignore", quiet=FALSE) {
+ if(length(uind1) != length(uind2)) stop("uind1 and uind2 are different lengths")
+ depth2K <<- depth2Kchoose (dmodel=dmodel, param=dpar)
+ iemm <- numeric(length(uind1))
+ mmstats.last <<- data.frame(mmrate=numeric(length(uind1)),exp.mmrate=NA)
+ inbreeduse <- rep(0,length(u1))
+ if(inbreed.method == "mean") {
+  Gd <- calcGdiag(snpsubset=snpsubset,puse=puse, quiet=TRUE) 
+  inbreeduse <- (Gd[uind1] + Gd[uind2]-2)/2
+  }
+ for(iani in 1:length(uind1)) {
+  mmstats <- mismatch.ident(seqID[uind1][iani],seqID[uind2][iani],snpsubset=snpsubset,puse=puse, inbreed=inbreeduse[iani])
+  mmstats.last[iani,] <<- with(mmstats,data.frame(mmrate,exp.mmrate))
+  iemm[iani] <- with(mmstats,mmrate-exp.mmrate)
+  }
+ mmss <- sum(iemm^2)
+ if(!quiet) cat(dmodel,"par = ",dpar,"ss = ",mmss,"\n")
+ mmss
+ }
+
 
 GRMPCA <- function(Guse, PCobj=NULL, npc=2, npcxtra=0, pcasymbol=0, plotname="PC", plotsfx="", pcacolo, plotord=NULL, legendf = NULL, 
                    legendpos = "", move.factor=0.05, cex.plotsize=1, softI=FALSE, ...) {
@@ -2131,7 +2162,7 @@ writeG <- function(Guse, outname, outtype=0, indsubset,IDuse, metadf=NULL ) { # 
  charpos <- regexpr("$",IDname,fixed=TRUE) ; if (charpos>0) IDname <- substr(IDname,charpos+1,nchar(IDname))
  if (missing(IDuse))  { IDuse <- seqID; IDname <- "seqID" }
  IDuse <- IDuse[indsubset]
- if(any(outtype != 6)) Guse <- Guse[indsubset,indsubset]
+ if(any(outtype != 6)) Guse <- Guse[indsubset,indsubset, drop=FALSE]
  if(1 %in% outtype) {
   savelist <- list(Guse=Guse,IDuse=IDuse)
   charpos <- regexpr("[",Gname,fixed=TRUE) ; if (charpos>0) Gname <- substr(Gname,1,charpos-1)
@@ -2329,8 +2360,8 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   else if(is.null(alleles))
     stop("Allele matrix object `alleles` is set to NULL.")
   else{
-    ref <- alleles[, seq(1, 2 * nsnps - 1, 2)]
-    alt <- alleles[, seq(2, 2 * nsnps, 2)]
+    ref <- alleles[, seq(1, 2 * nsnps - 1, 2), drop=FALSE]
+    alt <- alleles[, seq(2, 2 * nsnps, 2), drop=FALSE]
   }
   ## subset data if required
   if(missing(indsubset))
@@ -2342,9 +2373,9 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   if(length(IDuse) != length(indsubset) )
     stop("Lengths of IDuse and indsubset arguments does not match")
   is.big <- (as.numeric(length(indsubset)) * length(snpsubset) > 2^31-1 )
-  ref <- ref[indsubset, snpsubset]
-  alt <- alt[indsubset, snpsubset]
-  genon0 <- genon[indsubset, snpsubset]
+  ref <- ref[indsubset, snpsubset, drop=FALSE]
+  alt <- alt[indsubset, snpsubset, drop=FALSE]
+  genon0 <- genon[indsubset, snpsubset, drop=FALSE]
   pmat <- matrix(puse[snpsubset], nrow=length(indsubset), ncol=length(snpsubset), byrow=TRUE)
   if(length(allele.ref) == nsnps) allele.ref <- allele.ref[snpsubset]
   if(length(allele.alt) == nsnps) allele.alt <- allele.alt[snpsubset]
@@ -2457,8 +2488,8 @@ writeGBS <- function(indsubset,snpsubset,outname="HapMap.hmc.txt",outformat=gfor
   else if(is.null(alleles))
     stop("Allele matrix object `alleles` is set to NULL.")
   if(nrow(alleles) != nind | ncol(alleles) != 2* nsnps) stop("Allele matrix does not correspond to genotype matrix")
-  ref <- alleles[indsubset, seq(1, 2 * nsnps - 1, 2)[snpsubset]]
-  alt <- alleles[indsubset, seq(2, 2 * nsnps, 2)[snpsubset]]
+  ref <- alleles[indsubset, seq(1, 2 * nsnps - 1, 2)[snpsubset], drop=FALSE]
+  alt <- alleles[indsubset, seq(2, 2 * nsnps, 2)[snpsubset], drop=FALSE]
   depthsub <- ref + alt
   genonsub <- ref / depthsub
   genonsub <-  trunc(2*genonsub-1)+1
@@ -2466,7 +2497,7 @@ writeGBS <- function(indsubset,snpsubset,outname="HapMap.hmc.txt",outformat=gfor
   HetCount_allele2 <- colSums(alt * (genonsub == 1), na.rm=TRUE)
   allelespos <- seq(2, 2 * nsnps, 2)[snpsubset]
   allelespos <- sort(c(allelespos,allelespos-1))
-  acounts <- colSums(alleles[indsubset,allelespos])
+  acounts <- colSums(alleles[indsubset,allelespos, drop=FALSE])
   Count_allele1 <- colSums(ref)
   Count_allele2 <- colSums(alt)
   psub <- Count_allele1/(Count_allele1 + Count_allele2)
@@ -2483,7 +2514,7 @@ writeGBS <- function(indsubset,snpsubset,outname="HapMap.hmc.txt",outformat=gfor
   if(!exists("genon") | !exists("depth"))
     stop("genon and/or depth matrix does not exist")
   if(!all(depth==Inf | depth == 0)) cat("Warning: Some depths are not 0 or Inf\n")
-  genonsub <- genon[indsubset,snpsubset]
+  genonsub <- genon[indsubset,snpsubset, drop=FALSE]
   colnames(genonsub) <- SNP_Names[snpsubset]
   if(require("data.table")) fwrite(cbind(seqID=seqIDuse,genonsub), outname) else
     write.csv(cbind(seqID=seqIDuse,genonsub), outname,row.names=FALSE,quote=FALSE)
