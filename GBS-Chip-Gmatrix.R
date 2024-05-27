@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "1.2.0"
+KGDver <- "1.2.1"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
@@ -130,11 +130,12 @@ depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine de
 
 
 readGBS <- function(genofilefn = genofile, usedt="recommended") {
+ gform <- tolower(gform)
  if (gform == "chip") readChip(genofilefn)
- if (gform == "ANGSDcounts") readANGSD(genofilefn)
- if (gform == "TagDigger") readTD(genofilefn)
- if (toupper(gform) == "VCF") read.vcf(genofilefn)
- if (gform %in% c("uneak","Tassel")) readTassel(genofilefn, usedt=usedt)
+ if (gform == "angsdcounts") readANGSD(genofilefn)
+ if (gform == "tagdigger") readTD(genofilefn)
+ if (gform == "vcf") read.vcf(genofilefn)
+ if (gform %in% c("uneak","tassel")) readTassel(genofilefn, usedt=usedt)
  ndups <- sum(duplicated(seqID))
  if(ndups>0) cat("Warning: ",ndups,"duplicated seqIDs, 1st one is:",seqID[duplicated(seqID)][1],"\n")
  }
@@ -162,7 +163,7 @@ readTD <- function(genofilefn0 = genofile, skipcols=0) {
    }
   if(!nogenos) {
    if (havedt) {
-    if ( (packageVersion("data.table") < "1.12" | !require("R.utils")) & isgzfile) {
+    if ( (packageVersion("data.table") < "1.12" | suppressMessages(!require("R.utils"))) & isgzfile) {
      genosin <- fread(paste("gunzip -c",genofilefn0),sep=",",header=TRUE,showProgress=FALSE)
      } else {    
      genosin <- fread(genofilefn0,sep=",",header=TRUE)
@@ -294,14 +295,14 @@ readChip <- function(genofilefn0 = genofile) {
 readTassel <- function(genofilefn0 = genofile, usedt="recommended") {
   havedt <- FALSE       # problem with read.table(text= when > 2bill
   if(usedt=="always")   havedt <- require("data.table")
-  gsep <- switch(gform, uneak = "|", Tassel = ",")
+  gsep <- switch(gform, uneak = "|", tassel = ",")
   ghead <- scan(genofilefn0, what = "", nlines = 1, sep = "\t", quote="", quiet=TRUE)
-  nind <<- length(ghead) - switch(gform, uneak = 6, Tassel = 2)
+  nind <<- length(ghead) - switch(gform, uneak = 6, tassel = 2)
   cat("Data file has", nind, "samples \n")
-  seqID <<- switch(gform, uneak = ghead[2:(nind + 1)], Tassel = ghead[-(1:2)])
+  seqID <<- switch(gform, uneak = ghead[2:(nind + 1)], tassel = ghead[-(1:2)])
    # find SNPs without reading all genos (perhaps do this only if nogenos is TRUE if its taking too long)
    if(gform=="uneak") SNP_Names <<- scan(genofilefn0, what="",skip=1,quote="",flush=TRUE, quiet=TRUE) # 1st column only
-   if(gform=="Tassel") {
+   if(gform=="tassel") {
     tempin <- scan(genofilefn0, what=list(CHROM = "", POS = 0),skip=1,quote="",flush=TRUE, quiet=TRUE) # 1st 2 columns only
     chrom <<- tempin$CHROM
     pos <<- tempin$POS
@@ -311,8 +312,7 @@ readTassel <- function(genofilefn0 = genofile, usedt="recommended") {
    cat("Data file has", nsnps, "SNPs \n")
    if(usedt=="recommended" & nsnps * nind > 2^30) havedt <- FALSE    # problem with read.table(text= when > 2bill
   if(!nogenos) {
-  if (havedt & gform=="Tassel") {
-    # placeholder for code to use data.table
+  if (havedt & gform=="tassel") {
     isgzfile <- grepl(".gz",genofilefn0) #gz unzipping will only work on linux systems
     if ( packageVersion("data.table") < "1.12" & isgzfile) {
      genosin <- fread(paste("gunzip -c",genofilefn0),sep="\t",header=TRUE,showProgress=FALSE)
@@ -330,10 +330,10 @@ readTassel <- function(genofilefn0 = genofile, usedt="recommended") {
     alleles[,seq(1, 2 * nsnps - 1, 2)] <<- tempalleles[,1:nsnps]
     alleles[,seq(2, 2 * nsnps, 2)] <<- tempalleles[,nsnps+(1:nsnps)]
     } else {  # use scan to read input
-    if (gform == "Tassel") genosin <- scan(genofilefn0, skip = 1, sep = "\t", what = c(list(chrom = "", coord = 0), rep(list(""), nind)), quote="", quiet=TRUE)
+    if (gform == "tassel") genosin <- scan(genofilefn0, skip = 1, sep = "\t", what = c(list(chrom = "", coord = 0), rep(list(""), nind)), quote="", quiet=TRUE)
     if (gform == "uneak") genosin <- scan(genofilefn0, skip = 1, sep = "\t", what = c(list(chrom = ""), rep(list(""), nind), list(hetc1 = 0, hetc2 = 0, acount1 = 0, acount2 = 0, p = 0)), quote="", quiet=TRUE)
     alleles <<- matrix(0, nrow = nind, ncol = 2 * nsnps)
-    for (iind in 1:nind) alleles[iind, ] <<- matrix(as.numeric(unlist(strsplit(genosin[[iind + switch(gform, uneak = 1, Tassel = 2)]], split = gsep, 
+    for (iind in 1:nind) alleles[iind, ] <<- matrix(as.numeric(unlist(strsplit(genosin[[iind + switch(gform, uneak = 1, tassel = 2)]], split = gsep, 
                                                    fixed = TRUE))), nrow = 1)
     if (gform == "uneak") AFrq <<- genosin[[length(genosin)]]
     }
@@ -344,16 +344,16 @@ readTassel <- function(genofilefn0 = genofile, usedt="recommended") {
 }
 
 parkGBS <- function() {
- #refalleles altalleles
+ #refalleles altalleles  # swapped Dec 23
  if(!exists("alleles")) {
     alleles <- matrix(0,nrow=nind, ncol=2*nsnps)
     tempalleles <- matrix(0,nrow=nind,ncol=nsnps)
     tempalleles[which(genon == 0)] <- depth[which(genon==0)]
     tempalleles[which(genon == 1)] <- depth[which(genon==1)]/2
-    alleles[,seq(1, 2 * nsnps - 1, 2)] <- tempalleles
+    alleles[,seq(2, 2 * nsnps, 2)] <- tempalleles   # count of alt alleles
     tempalleles[which(genon == 2)] <- depth[which(genon==2)]
     tempalleles[which(genon == 0)] <- 0
-    alleles[,seq(2, 2 * nsnps, 2)] <- tempalleles
+    alleles[,seq(1, 2 * nsnps - 1, 2)] <- tempalleles # count of ref alleles
   }
  parkeddata <- list(nsnps=nsnps,SNP_Names=SNP_Names, seqID = seqID, nind=nind, alleles = alleles) 
  if(exists("AFrq")) parkeddata <- append(parkeddata,list(AFrq=AFrq))
@@ -388,6 +388,7 @@ joinGBS <- function(join1, join2=NULL, replace=TRUE, uniqueSNPs=FALSE) {
  if(replace) {
   nsnps <<- nsnps; SNP_Names <<- SNP_Names; seqID <<- seqID; nind <<- nind; alleles <<- alleles
   if(exists("depth")) rm(depth,genon, pos=1)
+  if(exists("AFrq")) rm(AFrq, pos=1)
   } else {
   outobj <- list(nsnps=nsnps,SNP_Names=SNP_Names, seqID = seqID, nind=nind, alleles = alleles)
   }
@@ -422,12 +423,12 @@ snp.remove <- function(snppos=NULL, keep=FALSE) {
    if(exists("pos")) pos <<- pos[-snppos]
    if(exists("refalleles")) refalleles <<- refalleles[-snppos]
    if(exists("altalleles")) altalleles <<- altalleles[-snppos]
+   if(exists("AFrq"))  AFrq <<- AFrq[-snppos]
    if (exists("alleles")) {
      uremovea <- sort(c(2 * snppos, 2 * snppos - 1))  # allele positions
      if(exists("RAcounts")) RAcounts <<- RAcounts[-snppos, ]
      alleles <<- alleles[, -uremovea]
      if(exists("allelecounts")) allelecounts <<- allelecounts[uremovea]
-     if (gform == "uneak") AFrq <<- AFrq[-snppos]
    }
   }
  }
@@ -643,8 +644,17 @@ calcp <- function(indsubset, pmethod="A") {
  if(exists("depth")) if(any(depth==Inf)) pmethod <- "G"
  if (pmethod == "A") {
   if (nrow(alleles) == nind) {
-   if(any(alleles==Inf)) alleles <- pmin(alleles,2) # alleles not repaced in parent env  # perhaps a bit approx? only use if genon not available
-   RAcountstemp <- matrix(colSums(alleles[indsubset,,drop=FALSE]), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
+   alleles <- alleles[indsubset,,drop=FALSE] # alleles not repaced in parent env
+   if(any(alleles==Inf)) { 
+    hetInf <- alleles[,seq(2, 2 * nsnps, 2)] *  alleles[,seq(1, 2 * nsnps - 1, 2)] 
+    alleles <- pmin(alleles,2)   # perhaps a bit approx? only use if genon not available
+    uInf <- which(hetInf==Inf, arr.ind=TRUE)
+    uInf[,2] <- 2*uInf[,2]
+    alleles[uInf] <- alleles[uInf]/2
+    uInf[,2] <- uInf[,2]-1
+    alleles[uInf] <- alleles[uInf]/2
+    }
+   RAcountstemp <- matrix(colSums(alleles), ncol = 2, byrow = TRUE)  # 1 row per SNP, ref and alt allele counts
    afreqs <- RAcountstemp[, 1]/rowSums(RAcountstemp)  # p for ref allele - based on # reads, not on inferred # alleles
    } else {
    afreqs <- NULL
@@ -657,9 +667,10 @@ calcp <- function(indsubset, pmethod="A") {
  }
 
 GBSsummary <- function() {
+ gform <- tolower(gform)
  depthinfo <- FALSE
  havedepth <- exists("depth")  # if depth present, assume it and genon are correct & shouldn't be recalculated (as alleles may be the wrong one)
- if(havedepth & !gform %in% c("VCF","chip")) cat("Warning: depth object already exists - reusing\n")
+ if(havedepth & !gform %in% c("vcf","chip")) cat("Warning: depth object already exists - reusing\n")
  if(gform != "chip") {
   if (!havedepth) depth <<- alleles[, seq(1, 2 * nsnps - 1, 2),drop=FALSE] + alleles[, seq(2, 2 * nsnps, 2),drop=FALSE]
   if(is.null(dim(depth))) depth <<- matrix(depth,nrow=nind,ncol=nsnps)
@@ -740,8 +751,8 @@ cat("Analysing", nind, "individuals and", nsnps, "SNPs\n")
    p.lab <- "Allele frequency from allele counts"
    pg.lab <- "Allele frequency from genotype calls"
    AF.lab <- "Allele frequency given"
-   if (gform == "uneak" & outlevel > 6) pairs(cbind(pg, p, AFrq), col = "#80808020", pch = 16, cex = 0.8, labels = c(pg.lab, p.lab, AF.lab))
-   if (gform != "uneak" | outlevel < 7) plot(pg ~ p, col="#80808020", pch=16, cex=0.8, xlab=p.lab, ylab=pg.lab)
+   if (outlevel > 6 & exists("AFrq")) pairs(cbind(pg, p, AFrq), col = "#80808020", pch = 16, cex = 0.8, labels = c(pg.lab, p.lab, AF.lab))
+   if (outlevel < 7 | !exists("AFrq")) plot(pg ~ p, col="#80808020", pch=16, cex=0.8, xlab=p.lab, ylab=pg.lab)
    dev.off()
   }
 
@@ -842,6 +853,7 @@ palette.aquatic <- colorRampPalette(c(rgb(200, 200, 200, max = 255), "blue"))(50
 palette.terrain <- terrain.colors(50)
 palette.temperature <- colorRampPalette(c("blue","white","red"))(50)
 whitedist <- function(pal) min(colSums(abs(col2rgb(pal)-matrix(255,nrow=3,ncol=length(pal)))))
+
 if(!functions.only) {
  readGBS()
  GBSsummary()
@@ -851,6 +863,16 @@ if(!functions.only) {
 ################## functions
 upper.vec <- function(sqMatrix,diag=FALSE) as.vector(sqMatrix[upper.tri(sqMatrix,diag=diag)])
 corner <- function(mtx, size=6L) print(mtx[1:size,1:size])
+eqline <- function(a=0,b=1,col="red",lwd=2, ...)  abline(a=a,b=b,col=col,lwd=lwd, ...)
+colMax <- function(x, na.rm = FALSE) apply(x,2,max,na.rm=na.rm)
+rowMax <- function(x, na.rm = FALSE) apply(x,1,max,na.rm=na.rm)
+rowMin <- function(x, na.rm = FALSE) apply(x,1,min,na.rm=na.rm)
+colMin <- function(x, na.rm = FALSE) apply(x,2,min,na.rm=na.rm)
+colwhich.Max <- function(x, na.rm = FALSE) apply(x,2,which.max)
+rowwhich.Max <- function(x, na.rm = FALSE) apply(x,1,which.max)
+colwhich.Min <- function(x, na.rm = FALSE) apply(x,2,which.min)
+rowwhich.Min <- function(x, na.rm = FALSE) apply(x,1,which.min)
+
 #seq2samp <- function(seqIDvec=seqID) read.table(text=seqIDvec,sep="_",stringsAsFactors=FALSE,fill=TRUE)[,1] # might not get number of cols right
 seq2samp1 <- function(seqIDvec=seqID, splitby="_", ...) sapply(strsplit(seqIDvec,split=splitby, ...),"[",1)
 seq2samp <- function(seqIDvec=seqID, splitby="_",nparts=NULL,dfout=FALSE, ...){
@@ -876,14 +898,15 @@ seq2samp <- function(seqIDvec=seqID, splitby="_",nparts=NULL,dfout=FALSE, ...){
 }
 
 
-colourby <- function(colgroup, nbreaks=0, col.name=NULL, symbgroup=NULL, symb.name=NULL,groupsort=FALSE,grouporder=NULL, maxlight=1,alpha=1,reverse=FALSE,symbset=NULL,
-            hclpals=character(0),pal.upper=1, nacolour="black") {
+colourby <- function(colgroup, nbreaks=0, col.name=NULL, symbgroup=NULL, symb.name=NULL,groupsort=FALSE,grouporder=NULL, maxlight=1,alpha=1,
+            reverse=FALSE,symbset=NULL, stdpal= "rainbow", hclpals=character(0),pal.upper=1, nacolour="black") {
  #maxlight is maximum lightness between 0 and 1
  #nbreaks is suggested # breaks
  isgroups <- (nbreaks==0)
  npals <- length(hclpals)
  if(isgroups) {
   collabels <- unique(colgroup)
+  if(!is.null(nacolour)) collabels <- na.omit(collabels)
   if(groupsort) collabels <- sort(collabels,na.last=TRUE)
   if(!is.null(grouporder)) if(length(grouporder)==length(collabels)) collabels <- collabels[grouporder]
   }
@@ -893,8 +916,13 @@ colourby <- function(colgroup, nbreaks=0, col.name=NULL, symbgroup=NULL, symb.na
   colgroup <- collabels[cut(colgroup,breaks = histinfo$breaks, labels=FALSE, include.lowest=TRUE)]  # redefine input
   } else collabels <- as.character(collabels)
  ncol <- length(collabels)
- collist <- rainbow(ncol)
- if(ncol > 8) collist[seq(2,ncol,2)] <-  rgb((t(col2rgb(collist[seq(2,ncol,2)]))+matrix(127,ncol=3,nrow=floor(ncol/2)))/2,maxColorValue = 255)  # darken every 2nd one
+ if( tryCatch(is.matrix(col2rgb(stdpal[1])), error=function(e) FALSE)) {collist <- stdpal; stdpal <- "rainbow"}
+ if(stdpal=="rainbow") collist <- rainbow(ncol)
+ if(grepl("heat",stdpal)) collist <- heat.colors(ncol)
+ if(grepl("terrain",stdpal)) collist <- terrain.colors(ncol)
+ if(grepl("topo",stdpal)) collist <- topo.colors(ncol)
+ if(grepl("cm",stdpal)) collist <- cm.colors(ncol)
+ if(ncol > 8 & isgroups) collist[seq(2,ncol,2)] <-  rgb((t(col2rgb(collist[seq(2,ncol,2)]))+matrix(127,ncol=3,nrow=floor(ncol/2)))/2,maxColorValue = 255)  # darken every 2nd one
  if(npals > 0 & exists("hcl.colors")) {
    for(ipal in 1:npals) {
     addcols <- hcl.colors(ceiling(ncol/(npals*pal.upper)),pal=hclpals[ipal])[1:ceiling(ncol/npals)]
@@ -910,12 +938,14 @@ colourby <- function(colgroup, nbreaks=0, col.name=NULL, symbgroup=NULL, symb.na
   }
  if(reverse) collist <- rev(collist)
  sampcol <- collist[match(colgroup,collabels)]
+ sampcol[is.na(sampcol)] <- nacolour
  outlist <- list(collabels=collabels,collist=collist,sampcol=sampcol)
  if(!is.null(col.name)) outlist <- c(outlist,col.name=col.name)
  if (all(as.integer(symbset)==symbset)) {
   if(is.null(symbgroup)) {
    symblist <- suppressWarnings(symbset + rep(0,ncol))  # uses R recycle 
    sampsymb <- symblist[match(colgroup,collabels)]
+   sampsymb[is.na(sampsymb)] <- 1  # make sure no NAs
    outlist <- c(outlist,list(symblist=symblist,sampsymb=sampsymb))
    } else { 
    symblabels <- unique(symbgroup)
@@ -923,11 +953,11 @@ colourby <- function(colgroup, nbreaks=0, col.name=NULL, symbgroup=NULL, symb.na
    nsymb <- length(symblabels)
    if(length(symbset) < nsymb) symbset <- union(symbset,1:nsymb)[1:nsymb] # augment with unused from 1,2, ... 
    sampsymb <- symbset[match(symbgroup,symblabels)]
+   sampsymb[is.na(sampsymb)] <- 1  # make sure no NAs
    outlist <- c(outlist,list(symblabels = symblabels, symblist=symbset,sampsymb=sampsymb))
    if(!is.null(symb.name)) outlist <- c(outlist,symb.name=symb.name)
    }
   }
- outlist$sampcol[is.na(outlist$sampcol)] <- nacolour
  outlist
  }
 
@@ -975,61 +1005,65 @@ coloursub <- function(colobj, indsubset) {
  }
 
 colkey <- function(colobj, sfx="", srt.lab=0, plotch=16, horiz = TRUE, freq=FALSE) {  # plot a key for colours
- if(!exists("cex.pointsize")) cex.pointsize <- 1
- nlevels <- length(colobj$collabels)
- is.raster <- is.numeric(colobj$collabels) & nlevels > 2
- legname1 <- ""; if(!is.null(colobj$col.name)) legname1 <- colobj$col.name
- legname2 <- ""; if(!is.null(colobj$symb.name)) legname2 <- colobj$symb.name
- longdim <- 480 + max(0,nlevels-20) * 10
- labtext <- colobj$collabels
- temptab <- table(colobj$sampcol)
- dosymb <- !is.null(colobj$symblabels)  # if there are symblabels then plot separately
- if( length(colobj$symblist) == length(colobj$collist) & !dosymb) plotch <- colobj$symblist
- # possibly: check that colours match symbols 1-1: sum(with(colobj,table(sampcol,sampsymb))!=0) == length(colobj$collist) 
- if(freq) labtext <- paste(labtext, as.character(temptab[match(colobj$collist,names(temptab))]), sep="\t")
- if(dosymb) {
-  symbtext=colobj$symblabels
-  temptab <- table(colobj$sampsymb)
-  if(freq) symbtext <- paste(symbtext, as.character(temptab[match(colobj$symblist,names(temptab))]), sep="\t")
+  if(!exists("cex.pointsize")) cex.pointsize <- 1
+  nlevels <- length(colobj$collabels)
+  is.raster <- is.numeric(colobj$collabels) & nlevels > 2
+  legname1 <- ""; if(!is.null(colobj$col.name)) legname1 <- colobj$col.name
+  legname2 <- ""; if(!is.null(colobj$symb.name)) legname2 <- colobj$symb.name
+  longdim <- 480 + max(0,nlevels-20) * 10
+  labtext <- colobj$collabels
+  temptab <- table(colobj$sampcol)
+  dosymb <- !is.null(colobj$symblabels)  # if there are symblabels then plot separately
+  if( length(colobj$symblist) == length(colobj$collist) & !dosymb) plotch <- colobj$symblist
+  # possibly: check that colours match symbols 1-1: sum(with(colobj,table(sampcol,sampsymb))!=0) == length(colobj$collist) 
+  if(freq) labtext <- paste(labtext, as.character(temptab[match(colobj$collist,names(temptab))]), sep="\t")
+  if(dosymb) {
+    symbtext=colobj$symblabels
+    temptab <- table(colobj$sampsymb)
+    if(freq) symbtext <- paste(symbtext, as.character(temptab[match(colobj$symblist,names(temptab))]), sep="\t")
   }
- if(is.raster) {
-  png(paste0("ColourKey",sfx,".png"),height=480, width=240, pointsize=12*cex.pointsize)
-   par(mar=0.1+c(1, 1, 1, 1))
-   plot( x=c(0,2),y=c(0,1) ,type="n",ylab="", axes=FALSE,xlab="")
-   legend_image <- as.raster(matrix(rev(colobj$collist), ncol = 1))
-   rasterImage(legend_image, 0,0,1,1)
-   rticks <- pretty(colobj$collabels,10)
-   rticks <- rticks[rticks < max(colobj$collabels) & rticks > min(colobj$collabels)]
-   #rticks <- rticks[2:(length(rticks)-1)]
-   nbars <- length(colobj$collist)
-   rast0 <- 0.5/nbars
-   rasth <- (nbars-1)/nbars  # height between end mid-points
-   lines(x=rep(1+0.4,2),y=c(rast0,rast0+rasth))
-   rtickss <- (rticks - min(colobj$collabels))/diff(range(colobj$collabels))
-   for(itick in seq_along(rticks)){
-    lines(x=c(1.4,1.43),y=rep(rast0+rtickss[itick]*rasth,2))
-    text(x=1+0.45, y= rast0+rtickss[itick]*rasth, labels=format(rticks)[itick],adj=c(0,0.5), cex=0.8)
+  if(is.raster) {
+    png(paste0("ColourKey",sfx,".png"),height=480, width=240, pointsize=12*cex.pointsize)
+    par(mar=0.1+c(1, 1, 1, 1))
+    plot( x=c(0,2),y=c(0,1) ,type="n",ylab="", axes=FALSE,xlab="")
+    legend_image <- as.raster(matrix(rev(colobj$collist), ncol = 1))
+    rasterImage(legend_image, 0,0,1,1)
+    rticks <- pretty(colobj$collabels,10)
+    rticks <- rticks[rticks < max(colobj$collabels) & rticks > min(colobj$collabels)]
+    #rticks <- rticks[2:(length(rticks)-1)]
+    nbars <- length(colobj$collist)
+    rast0 <- 0.5/nbars
+    rasth <- (nbars-1)/nbars  # height between end mid-points
+    lines(x=rep(1+0.4,2),y=c(rast0,rast0+rasth))
+    loessfit <- loess(I(1:nbars)~ colobj$collabels)
+    rticksf <- predict(loessfit,rticks)
+    #rtickss <- (rticksf - min(colobj$collabels))/diff(range(colobj$collabels))
+    #rtickss <- (rticksf - min(colobj$collabels))/nbars
+    rtickss <- (rticksf - 1)/nbars
+    for(itick in seq_along(rticks)){
+      lines(x=c(1.4,1.43),y=rep(rast0+rtickss[itick]*rasth,2))
+      text(x=1+0.45, y= rast0+rtickss[itick]*rasth, labels=format(rticks)[itick],adj=c(0,0.5), cex=0.8)
     }
-   if(!is.null(colobj$col.name)) text(x=1+0.3,y=1, labels=colobj$col.name, xpd=NA, adj=c(0.5,0), cex=1.2)
+    if(!is.null(colobj$col.name)) text(x=1+0.3,y=1, labels=colobj$col.name, xpd=NA, adj=c(0.5,0), cex=1.2)
   } else { # not raster
-  if(horiz ) {
-   png(paste0("ColourKey",sfx,".png"),height=240, width = longdim, pointsize=12*cex.pointsize)
-   par(mar=0.1+c(1, 1, 1, 1))
-   plot( 1:nlevels, rep(1,nlevels),col=colobj$collist,pch=plotch, cex=1.5,ylab="", axes=FALSE,xlab="", xpd=NA, ylim=c(0,1),xlim=c(0,nlevels))
-   text(labels=c(legname1,labtext),x=(0:nlevels)+0.4,y=0.9,srt=srt.lab,pos=2,xpd=TRUE)
-   if(dosymb) legend(x=nlevels/2,y=0.85,legend=symbtext,col="black",pch=colobj$symblist,ncol=length(colobj$symblist),
-        bty="n", xjust=0.5, pt.cex=1.5, xpd=NA, title=legname2)
-   } else {
-   png(paste0("ColourKey",sfx,".png"),width=240, height = longdim, pointsize=12*cex.pointsize)
-   par(mar=0.1+c(1, 1, 1, 1))
-   plot( rep(0,nlevels),nlevels:1, col=colobj$collist,pch=plotch, cex=1.5,ylab="", axes=FALSE,xlab="", xpd=NA, xlim=c(0,1),ylim=c(1,nlevels+1))
-   text(labels=c(labtext[nlevels:1],legname1),y=1:(nlevels+1),x=0.1,pos=4,srt=srt.lab,xpd=TRUE)
-   if(dosymb) legend(y=nlevels/2, x=0.2 + max(strwidth(labtext)),legend=symbtext,col="black",pch=colobj$symblist,
-        bty="n", yjust=0.5, pt.cex=1.5, xpd=NA, title=legname2)
-   }
+    if(horiz ) {
+      png(paste0("ColourKey",sfx,".png"),height=240, width = longdim, pointsize=12*cex.pointsize)
+      par(mar=0.1+c(1, 1, 1, 1))
+      plot( 1:nlevels, rep(1,nlevels),col=colobj$collist,pch=plotch, cex=1.5,ylab="", axes=FALSE,xlab="", xpd=NA, ylim=c(0,1),xlim=c(0,nlevels))
+      text(labels=c(legname1,labtext),x=(0:nlevels)+0.4,y=0.9,srt=srt.lab,pos=2,xpd=TRUE)
+      if(dosymb) legend(x=nlevels/2,y=0.85,legend=symbtext,col="black",pch=colobj$symblist,ncol=length(colobj$symblist),
+                        bty="n", xjust=0.5, pt.cex=1.5, xpd=NA, title=legname2)
+    } else {
+      png(paste0("ColourKey",sfx,".png"),width=240, height = longdim, pointsize=12*cex.pointsize)
+      par(mar=0.1+c(1, 1, 1, 1))
+      plot( rep(0,nlevels),nlevels:1, col=colobj$collist,pch=plotch, cex=1.5,ylab="", axes=FALSE,xlab="", xpd=NA, xlim=c(0,1),ylim=c(1,nlevels+1))
+      text(labels=c(labtext[nlevels:1],legname1),y=1:(nlevels+1),x=0.1,pos=4,srt=srt.lab,xpd=TRUE)
+      if(dosymb) legend(y=nlevels/2, x=0.2 + max(strwidth(labtext)),legend=symbtext,col="black",pch=colobj$symblist,
+                        bty="n", yjust=0.5, pt.cex=1.5, xpd=NA, title=legname2)
+    }
   }
- dev.off()
- }
+  dev.off()
+}
 
 # fade (Lumley+)
 fade <- function(colors,alpha) {
@@ -1051,7 +1085,8 @@ collegend <- function(colobj,legpos="topleft", plotx=NULL, ploty=NULL, cex.leg=0
          length(colobj$collist) == qr(model.matrix(~ colobj$sampcol +  as.factor(colobj$sampsymb)))$rank) legendsym <- colobj$symblist
      legname1 <- ""; if(!is.null(colobj$col.name)) legname1 <- colobj$col.name
      legname2 <- ""; if(!is.null(colobj$symb.name)) legname2 <- colobj$symb.name
-     ncolumns <- 1; if(length(colobj$collist) > 6 & !is.numeric(colobj$collabels)) ncolumns <- 2
+     ncolumns <- 1; # if(length(colobj$collist) > 6 & !is.numeric(colobj$collabels)) ncolumns <- 2
+     ncolumns <- 1; if(!is.numeric(colobj$collabels)) ncolumns <- 1+ min(5,floor(sqrt(length(colobj$collist)/6)-.01))
      ncolumns2 <- 1; if(length(colobj$symblist) > 6) ncolumns2 <- 2
      if(!is.numeric(colobj$collabels)) leginfo <- legend(legpos, legend=colobj$collabels, col=colobj$collist, pch=legendsym, ncol=ncolumns, cex=cex.leg, title=legname1)$rect
      if(is.numeric(colobj$collabels)) { #raster instead of legend
@@ -1707,9 +1742,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    npc <- sign(npc) * min(abs(npc),nsnpsub,length(pcasamps))
    if (npc > 0 & length(pcasamps) > 1) {
      if (samptype=="pooled") {
-      temp <- sqrt(Gpool[pcasamps,pcasamps, drop=FALSE] - min(Gpool[pcasamps,pcasamps, drop=FALSE], na.rm = TRUE))
+      minG <- min(Gpool[pcasamps,pcasamps, drop=FALSE], na.rm = TRUE)
+      temp <- sqrt(Gpool[pcasamps,pcasamps, drop=FALSE] - minG)
       } else {
-      temp <- sqrt(GGBS5[pcasamps,pcasamps, drop=FALSE] - min(GGBS5[pcasamps,pcasamps, drop=FALSE], na.rm = TRUE))
+      minG <- min(GGBS5[pcasamps,pcasamps, drop=FALSE], na.rm = TRUE)
+      temp <- sqrt(GGBS5[pcasamps,pcasamps, drop=FALSE] - minG)
       }
      rownames(temp) <- colnames(temp) <- NULL  # force numbering on heatmap even if row/col names exist for G matrix
      if(withHeatmaply){
@@ -1747,6 +1784,9 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
        }
        hmdat <- data.frame(rowInd=hmout$rowInd,seqIDInd=indsubset[pcasamps[hmout$rowInd]],seqID=seqID[indsubset[pcasamps[hmout$rowInd]]])
        write.csv(hmdat,paste0("HeatmapOrder", sfx, ".csv"),row.names=FALSE,quote=FALSE)
+       hmcol <- colourby(range(temp), nbreaks=50, col.name="Relatedness", stdpal="heat", reverse=TRUE)
+       hmcol$collabels <- hmcol$collabels^2 + minG
+       colkey(hmcol,sfx=paste0(sfx,"heatmap"))
        dev.off()
        }
      }
@@ -2348,6 +2388,7 @@ genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref
 ## Write KGD back to VCF file
 writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, keepgt=TRUE, mindepth=0, allele.ref="C", allele.alt="G", 
                      verlabel="4.3",usePL=FALSE, contig.meta=FALSE, CHROM=NULL, POS=NULL){
+  gform <- tolower(gform)
   if (is.null(outname)) outname <- "GBSdata"
   filename <- paste0(outname,".vcf")
   if(gform=="chip" & max(depth) == Inf & !exists("alleles")) {  # create alleles for chip data
@@ -2400,7 +2441,7 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   temp <- options()$scipen
   options(scipen=10)  #needed for formating
   ## Compute the Data line fields
-  if(gform == "Tassel"){
+  if(gform == "tassel"){
     out[,1] <- chrom[snpsubset]
     out[,2] <- pos[snpsubset]
   }
@@ -2468,7 +2509,7 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   options(scipen=temp)
 
   outord <- 1:nrow(out)
-  if(gform == "Tassel" | (!is.null(CHROM) & !is.null(POS))) outord <- order(out[,1],as.numeric(out[,2]))
+  if(gform == "tassel" | (!is.null(CHROM) & !is.null(POS))) outord <- order(out[,1],as.numeric(out[,2]))
   ## fwrite is much faster
   if(require(data.table))
     fwrite(split(t(out[outord,]), 1:(length(indsubset)+9)), file=filename, sep="\t", append=TRUE, nThread = 1)
@@ -2478,11 +2519,12 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
 }
 
 writeGBS <- function(indsubset,snpsubset,outname="HapMap.hmc.txt",outformat=gform,seqIDuse=seqID) {
+ outformat <- tolower(outformat)
  written <- FALSE
  if(missing(indsubset)) indsubset <- 1:nind
  if(missing(snpsubset)) snpsubset <- 1:nsnps
  if(length(seqIDuse) == nind) seqIDuse <- seqIDuse[indsubset]
- if(outformat == "uneak") {
+ if(tolower(outformat) == "uneak") {
   if(!exists("alleles"))
     stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")
   else if(is.null(alleles))
@@ -2504,19 +2546,19 @@ writeGBS <- function(indsubset,snpsubset,outname="HapMap.hmc.txt",outformat=gfor
   outmtx <- matrix(paste(t(ref),t(alt),sep="|"),nrow=length(snpsubset),ncol=length(indsubset))
   colnames(outmtx) <- seqIDuse
 #  colnames(outmtx) <- c("rs",seqIDuse[indsubset],"hetc1","hetc2","acount1","acount2","p")
-  if(require("data.table")) fwrite(cbind(rs=SNP_Names[snpsubset],outmtx,HetCount_allele1,HetCount_allele2,Count_allele1,Count_allele2,Frequency=round(psub,3)),
+  if(require("data.table")) fwrite(data.frame(rs=SNP_Names[snpsubset],outmtx,HetCount_allele1,HetCount_allele2,Count_allele1,Count_allele2,Frequency=round(psub,3)),
        outname, sep="\t") else
     write.table(cbind(rs=SNP_Names[snpsubset],outmtx,HetCount_allele1,HetCount_allele2,Count_allele1,Count_allele2,Frequency=round(psub,3)),
        outname,row.names=FALSE,quote=FALSE,sep="\t")
   written <- TRUE
   } 
- if(outformat == "chip") {
+ if(tolower(outformat) == "chip") {
   if(!exists("genon") | !exists("depth"))
     stop("genon and/or depth matrix does not exist")
   if(!all(depth==Inf | depth == 0)) cat("Warning: Some depths are not 0 or Inf\n")
   genonsub <- genon[indsubset,snpsubset, drop=FALSE]
   colnames(genonsub) <- SNP_Names[snpsubset]
-  if(require("data.table")) fwrite(cbind(seqID=seqIDuse,genonsub), outname) else
+  if(require("data.table")) fwrite(data.frame(seqID=seqIDuse,genonsub), outname) else
     write.csv(cbind(seqID=seqIDuse,genonsub), outname,row.names=FALSE,quote=FALSE)
   written <- TRUE
   } 

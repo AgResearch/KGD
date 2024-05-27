@@ -1,5 +1,5 @@
 #!/bin/echo Source me don't execute me 
-pedver <- "1.1.1"
+pedver <- "1.1.1 Update1"
 cat("GBS-PedAssign for KGD version:",pedver,"\n")
 
   verif.ch <- c(".","Y","N")  # NA, Y, N
@@ -856,7 +856,7 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
         }
        BothMatches$tempna <- NA
        uchange <- which(whichbetter==2)
-       if(length(uchange)>0) {
+       if(length(uchange)>0) { # promote 2nd father to 1st
         new0 <- BothMatches[uselfed[uchange],c("FatherMatch2nd","tempna","Fatherrel2nd","tempna","tempna","mmrateFather2",
                             "tempna","exp.mmrateFather2","tempna","tempna","tempna","tempna","tempna","tempna")]
         changecols <- c("BestFatherMatch","FatherMatch2nd","Fatherrel","Fatherrel2nd","Father12rel","mmrateFather",
@@ -868,6 +868,16 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
         new0$FatherAssign[which(is.na(new0$Fatherrel))] <- "N"
         new0$FatherInb <- diag(eval(parse(text = GCheck)))[match(pedinfo$seqID[match(new0$BestFatherMatch, pedinfo$IndivID)], seqID[indsubset])] - 1
         BothMatches[uselfed[uchange],changecols] <- new0
+        # if 2nd mother is the promoted father, remove that and change B results to Y
+        u2same <- intersect(which(BothMatches$BestFatherMatch ==  BothMatches$MotherMatch2nd), uselfed[uchange])
+        if(length(u2same)>0) {
+         BothMatches[u2same,c("MotherMatch2nd","Mother12rel","mmrateMother2","exp.mmrateMother2")] <- NA
+         uB <- which(BothMatches$MotherAssign[u2same]=="B")
+         if(length(uB)>0) {
+          BothMatches$MotherAssign[u2same[uB]] <- "Y"  # restore
+          BothMatches[u2same[uB],c("Mothersd","MotherReliability")] <- NA
+          }
+         }
         } 
        uchange <- which(whichbetter==1)
        if(length(uchange)>0) {
@@ -882,6 +892,16 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
         new0$MotherAssign[which(is.na(new0$Motherrel))] <- "N"
         new0$MotherInb <- diag(eval(parse(text = GCheck)))[match(pedinfo$seqID[match(new0$BestMotherMatch, pedinfo$IndivID)], seqID[indsubset])] - 1
         BothMatches[uselfed[uchange],changecols] <- new0
+        # if 2nd father is the promoted mother, remove that and change B results to Y
+        u2same <- intersect(which(BothMatches$BestMotherMatch ==  BothMatches$FatherMatch2nd), uselfed[uchange])
+        if(length(u2same)>0) {
+         BothMatches[u2same,c("FatherMatch2nd","Father12rel","mmrateFather2","exp.mmrateFather2")] <- NA
+         uB <- which(BothMatches$FatherAssign[u2same]=="B")
+         if(length(uB)>0) {
+          BothMatches$FatherAssign[u2same[uB]] <- "Y"  # restore
+          BothMatches[u2same[uB],c("Fathersd","FatherReliability")] <- NA
+          }
+         }
         } 
        BothMatches$tempna <- NULL
        }
