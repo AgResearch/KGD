@@ -2378,15 +2378,15 @@ Gbend <- function(GRM,mineval=0.001, doplot=TRUE, sfx="", evalsum="free") {
 }
 
 ## function to use in writeVCF
-genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref, alt
-  nobj <- length(vec)/9
+genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref, alt, depth
+  nobj <- length(vec)/10
   outstr <-  gsub("NA",".",gsub("NA,","",paste(vec[1:nobj],paste(vec[nobj+(1:nobj)],vec[2*nobj+(1:nobj)],vec[3*nobj+(1:nobj)],sep=","), 
                    paste(vec[4*nobj+(1:nobj)],vec[5*nobj+(1:nobj)],vec[6*nobj+(1:nobj)],sep=","), 
-                   paste(vec[7*nobj+(1:nobj)],vec[8*nobj+(1:nobj)],sep=","), sep=":")))
+                   paste(vec[7*nobj+(1:nobj)],vec[8*nobj+(1:nobj)],sep=","),vec[9*nobj+(1:nobj)], sep=":")))
   }
 
 ## Write KGD back to VCF file
-writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, keepgt=TRUE, mindepth=0, allele.ref="C", allele.alt="G", 
+writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, keepgt=TRUE, mindepth=0, allele.ref="C", allele.alt="G", GTfromGP=FALSE,
                      verlabel="4.3",usePL=FALSE, contig.meta=FALSE, CHROM=NULL, POS=NULL){
   gform <- tolower(gform)
   if (is.null(outname)) outname <- "GBSdata"
@@ -2457,8 +2457,8 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   out[,6] <- rep(".", length(snpsubset))
   out[,7] <- rep(".", length(snpsubset))
   out[,8] <- rep(".", length(snpsubset))
-  out[,9] <- rep("GT:GP:GL:AD", length(snpsubset))
-  if(usePL)  out[,9] <- rep("GT:GP:PL:AD", length(snpsubset))
+  out[,9] <- rep("GT:GP:GL:AD:DP", length(snpsubset))
+  if(usePL)  out[,9] <- rep("GT:GP:PL:AD:DP", length(snpsubset))
 
   
   ## compute probs
@@ -2493,16 +2493,26 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   ## Create the data part
   ## Compute the genotype fields
   depthsub <- ref+alt
-  is.na(genon) <- is.na(paa)  <- is.na(pab)  <- is.na(pbb)  <- is.na(llaa)  <- is.na(llab)  <- is.na(llbb) <- (depthsub < mindepth)
-  rm(depthsub)
-  genon0[is.na(genon0)] <- -1
-  if(!keepgt) genon0[] <- -1  # set all elements to missing
+  is.na(genon0) <- is.na(paa)  <- is.na(pab)  <- is.na(pbb)  <- is.na(llaa)  <- is.na(llab)  <- is.na(llbb) <- (depthsub < mindepth)
+  depthsub[(depthsub < mindepth)] = 0
+  #rm(depthsub)
+  if(!keepgt) {
+    genon0[] <- -1  # set all elements to missing
+  } else if (GTfromGP){
+    genon0_tmp = matrix(0, nrow=nrow(genon0), ncol=ncol(genon0))
+    genon0_tmp[which((paa > pab) & (paa > pbb))] = 2
+    genon0_tmp[which((pab > paa) & (pab > pbb))] = 1
+    genon0_tmp[is.na(genon0)] <- -1
+    genon0 = genon0_tmp
+  } else{
+    genon0[is.na(genon0)] <- -1
+  }
   if (is.big) {
    gt <- apply(genon0+2, 2, function(x) c("./.","1/1","0/1","0/0")[x])
-   out2[,-c(1:9)] <- apply(cbind(gt,paa,pab,pbb,llaa,llab,llbb,ref,alt),1,genostring)
+   out[,-c(1:9)] <- apply(cbind(gt,paa,pab,pbb,llaa,llab,llbb,ref,alt,depthsub),1,genostring)
    } else {
    gt <- sapply(as.vector(genon0), function(x) switch(x+2,"./.","1/1","0/1","0/0"))
-   out[,-c(1:9)] <- matrix(gsub("NA",".",gsub("NA,","",paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","), sep=":"))), 
+   out[,-c(1:9)] <- matrix(gsub("NA",".",gsub("NA,","",paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","),depthsub, sep=":"))), 
                            nrow=length(snpsubset), ncol=length(indsubset), byrow=TRUE)
       # for missings, first change NA, to empty so that any set of NA,NA,...,NA changes to NA, then can set that to . which is vcf missing for the whole field
    }
