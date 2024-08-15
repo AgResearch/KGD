@@ -2398,7 +2398,7 @@ genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref
   }
 
 ## Write KGD back to VCF file
-writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, keepgt=TRUE, mindepth=0, allele.ref="C", allele.alt="G", GTfromGP=FALSE,
+writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, keepgt=TRUE, mindepth=0, allele.ref="C", allele.alt="G", GTmethod="observed",
                      verlabel="4.3",usePL=FALSE, contig.meta=FALSE, CHROM=NULL, POS=NULL){
   gform <- tolower(gform)
   if (is.null(outname)) outname <- "GBSdata"
@@ -2432,6 +2432,7 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   pmat <- matrix(puse[snpsubset], nrow=length(indsubset), ncol=length(snpsubset), byrow=TRUE)
   if(length(allele.ref) == nsnps) allele.ref <- allele.ref[snpsubset]
   if(length(allele.alt) == nsnps) allele.alt <- allele.alt[snpsubset]
+  GTmethod = match.arg(GTmethod, c("observed","GP")) ## Note: "GTmethod = NULL" will give "observed"
   
   # Meta information
   metalik <-  '##FORMAT=<ID=GL,Number=G,Type=Float,Description="Genotype Likelihood">'
@@ -2510,13 +2511,13 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   #rm(depthsub)
   if(!keepgt) {
     genon0[] <- -1  # set all elements to missing
-  } else if (GTfromGP){
+  } else if (GTmethod == "GP"){
     genon0_tmp = matrix(0, nrow=nrow(genon0), ncol=ncol(genon0))
     genon0_tmp[which((paa > pab) & (paa > pbb))] = 2
     genon0_tmp[which((pab > paa) & (pab > pbb))] = 1
     genon0_tmp[is.na(genon0)] <- -1
     genon0 = genon0_tmp
-  } else{
+  } else if (GTmethod == "observed"){
     genon0[is.na(genon0)] <- -1
   }
   if (is.big) {
