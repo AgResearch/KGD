@@ -1571,8 +1571,20 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
   if(withHeatmaply){
     if(!require(heatmaply) || compareVersion(as.character(packageVersion("heatmaply")), "0.15.0")==-1)
       withHeatmaply = FALSE
-    if(!exists("hover.info"))
+    if(!exists("hover.info")){
+      if(missing(samp.info)){
+        if(!exists("seqID"))
+          samp.info <- list("Sample ID"=1:length(indsubset))
+        else
+          samp.info <- list("Sample ID"=seqID[indsubset])
+      } else if(!is.list(samp.info)){
+        warning("Sample information object is not a list")
+        samp.info <- list("Sample ID"=seqID[indsubset])
+      } else if(any(unlist(lapply(samp.info,function(x) length(x)!=length(indsubset))))){
+        stop("Missing or extra sample information. Check that the 'samp.info' object is correct.")
+      }
       hover.info <- apply(sapply(1:length(samp.info),function(x) paste0(names(samp.info)[x],": ",samp.info[[x]]),simplify = TRUE),1,paste0,collapse="<br>")
+    }
   }
   nsnpsub <- length(snpsubset)
   nindsub <- length(indsubset)
