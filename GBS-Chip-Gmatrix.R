@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "1.2.1"
+KGDver <- "1.2.2"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
@@ -130,7 +130,7 @@ depth2Kchoose <- function(dmodel="bb",param) {  # function to choose redefine de
 
 
 readGBS <- function(genofilefn = genofile, usedt="recommended") {
- gform <- tolower(gform)
+ gform <<- tolower(gform)
  if (gform == "chip") readChip(genofilefn)
  if (gform == "angsdcounts") readANGSD(genofilefn)
  if (gform == "tagdigger") readTD(genofilefn)
@@ -232,7 +232,7 @@ readANGSD <- function(genofilefn0 = genofile) {
    nind <<- length(seqID)
    chrom <<- vcfin$`#CHROM`
    pos <<- vcfin$POS
-   if(all(SNP_Names==".")) SNP_Names <<- paste(chrom,pos,sep="_")
+   if(all(SNP_Names==".")) SNP_Names <<- paste(chrom,as.integer(pos),sep="_")
    nfields <- 1+ lengths(regmatches(vcfin$FORMAT,gregexpr(":",vcfin$FORMAT)))
    tempformats <- read.table(text=vcfin$FORMAT,sep=":",fill=TRUE,stringsAsFactors=FALSE,col.names=paste0("V",1:max(nfields)))
    gthave = apply(tempformats=="GT",1,any)
@@ -306,7 +306,7 @@ readTassel <- function(genofilefn0 = genofile, usedt="recommended") {
     tempin <- scan(genofilefn0, what=list(CHROM = "", POS = 0),skip=1,quote="",flush=TRUE, quiet=TRUE) # 1st 2 columns only
     chrom <<- tempin$CHROM
     pos <<- tempin$POS
-    SNP_Names <<- paste(chrom,pos,sep="_")
+    SNP_Names <<- paste(chrom,as.integer(pos),sep="_")
     }
    nsnps <<- length(SNP_Names)
    cat("Data file has", nsnps, "SNPs \n")
@@ -2442,7 +2442,8 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
                     '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
                     '##FORMAT=<ID=GP,Number=G,Type=Float,Description="Genotype Probability">', 
                     metalik, 
-                    '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele Read Counts">\n',sep="\n")
+                    '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele Read Counts">\n',
+                    '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read Depth">\n',sep="\n")
   cat(metaInfo, file=filename)
   if(contig.meta) write.table(cbind("##contig=<ID=",SNP_Names[snpsubset],">"),file=filename,sep="",quote=FALSE,row.names=FALSE,col.names=FALSE,append=TRUE)
   ## colnames:
@@ -2452,7 +2453,7 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   out <- matrix(nrow=length(snpsubset),ncol=9+length(indsubset))
   
   temp <- options()$scipen
-  options(scipen=10)  #needed for formating
+  options(scipen=15)  #needed for formating. Increased from 10
   ## Compute the Data line fields
   if(gform == "tassel"){
     out[,1] <- chrom[snpsubset]
@@ -2472,7 +2473,6 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   out[,8] <- rep(".", length(snpsubset))
   out[,9] <- rep("GT:GP:GL:AD:DP", length(snpsubset))
   if(usePL)  out[,9] <- rep("GT:GP:PL:AD:DP", length(snpsubset))
-
   
   ## compute probs
   paa <- (1-ep)^ref*ep^alt*pmat^2
@@ -2483,13 +2483,19 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   pab <- round(pab/psum,4)
   pbb <- round(pbb/psum,4)
   ## compute likelihood values
-  compLike <- function(x) 1/2^(ref+alt)*((2-x)*ep + x*(1-ep))^ref * ((2-x)*(1-ep) + x*ep)^alt
-  llaa <- log10(compLike(2))
-  llab <- log10(compLike(1))
-  llbb <- log10(compLike(0))
-  llaa[is.infinite(llaa)] <- -1000
-  llab[is.infinite(llab)] <- -1000
-  llbb[is.infinite(llbb)] <- -1000
+  compLike0 <- function(x) ((2-x)*ep + x*(1-ep))^ref * ((2-x)*(1-ep) + x*ep)^alt
+
+  compLike <- function(x) max(.Machine$double.xmin,1/2^(ref+alt))*((2-x)*ep + x*(1-ep))^ref * ((2-x)*(1-ep) + x*ep)^alt
+
+  #llaa <- log10(compLike(2))  # alternative method
+  #llab <- log10(compLike(1))
+  #llbb <- log10(compLike(0))
+  llaa <- (ref+alt)*log10(1/2)+log10(compLike0(2))
+  llab <- (ref+alt)*log10(1/2)+log10(compLike0(1))
+  llbb <- (ref+alt)*log10(1/2)+log10(compLike0(0))
+  llaa <- pmin(pmax(llaa,-1000),1000)  # deal with + or - Inf
+  llab <- pmin(pmax(llab,-1000),1000)
+  llbb <- pmin(pmax(llbb,-1000),1000)
   #phred-scaled ...
   minll <- pmax(llaa,llab,llbb)
   plaa <- -10 * round(llaa - minll,0)
@@ -2517,7 +2523,7 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
     genon0_tmp[which((pab > paa) & (pab > pbb))] = 1
     genon0_tmp[is.na(genon0)] <- -1
     genon0 = genon0_tmp
-  } else if (GTmethod == "observed"){
+  } else { # if (GTmethod == "observed"){  # do this for anything other than GP
     genon0[is.na(genon0)] <- -1
   }
   if (is.big) {
@@ -2525,7 +2531,7 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
    out[,-c(1:9)] <- apply(cbind(gt,paa,pab,pbb,llaa,llab,llbb,ref,alt,depthsub),1,genostring)
    } else {
    gt <- sapply(as.vector(genon0), function(x) switch(x+2,"./.","1/1","0/1","0/0"))
-   out[,-c(1:9)] <- matrix(gsub("NA",".",gsub("NA,","",paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","),depthsub, sep=":"))), 
+   out[,-c(1:9)] <- matrix(gsub("NA",".",gsub("NA,","",paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","),depthsub, sep=":"))),
                            nrow=length(snpsubset), ncol=length(indsubset), byrow=TRUE)
       # for missings, first change NA, to empty so that any set of NA,NA,...,NA changes to NA, then can set that to . which is vcf missing for the whole field
    }
@@ -2541,18 +2547,20 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   return(invisible(NULL))
 }
 
-writeGBS <- function(indsubset,snpsubset,outname="HapMap.hmc.txt",outformat=gform,seqIDuse=seqID) {
+writeGBS <- function(indsubset, snpsubset, outname="HapMap.hmc.txt", outformat=gform, seqIDuse=seqID, allele.ref="C", allele.alt="G") {
  outformat <- tolower(outformat)
  written <- FALSE
  if(missing(indsubset)) indsubset <- 1:nind
  if(missing(snpsubset)) snpsubset <- 1:nsnps
  if(length(seqIDuse) == nind) seqIDuse <- seqIDuse[indsubset]
- if(tolower(outformat) == "uneak") {
+ if(outformat != "chip") {
   if(!exists("alleles"))
     stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")
   else if(is.null(alleles))
     stop("Allele matrix object `alleles` is set to NULL.")
   if(nrow(alleles) != nind | ncol(alleles) != 2* nsnps) stop("Allele matrix does not correspond to genotype matrix")
+  }
+ if(outformat == "uneak") {
   ref <- alleles[indsubset, seq(1, 2 * nsnps - 1, 2)[snpsubset], drop=FALSE]
   alt <- alleles[indsubset, seq(2, 2 * nsnps, 2)[snpsubset], drop=FALSE]
   depthsub <- ref + alt
@@ -2575,7 +2583,19 @@ writeGBS <- function(indsubset,snpsubset,outname="HapMap.hmc.txt",outformat=gfor
        outname,row.names=FALSE,quote=FALSE,sep="\t")
   written <- TRUE
   } 
- if(tolower(outformat) == "chip") {
+ if(outformat == "tagdigger") {
+  nsnpsub <- length(snpsubset)
+  if(length(allele.ref) == nsnps) allele.ref <- allele.ref[snpsubset]
+  if(length(allele.alt) == nsnps) allele.alt <- allele.alt[snpsubset]
+  if(length(allele.ref) == 1) allele.ref <- rep(allele.ref,nsnpsub)
+  if(length(allele.alt) == 1) allele.alt <- rep(allele.alt,nsnpsub)
+  alleles <- alleles[indsubset,c(1,2) + rep(2*snpsubset-2,each=2)]
+  colnames(alleles) <- paste(rep(SNP_Names, each=2),c(allele.ref,allele.alt)[c(0,nsnpsub)+rep(1:nsnpsub,each=2)],sep="_")
+  if(require("data.table")) fwrite(data.frame(seqID=seqIDuse,alleles),outname) else
+    write.csv(cbind(seqID=seqIDuse,alleles),outname,row.names=FALSE,quote=FALSE)
+  written <- TRUE
+  }
+ if(outformat == "chip") {
   if(!exists("genon") | !exists("depth"))
     stop("genon and/or depth matrix does not exist")
   if(!all(depth==Inf | depth == 0)) cat("Warning: Some depths are not 0 or Inf\n")
@@ -2664,4 +2684,3 @@ genderassign <- function(ped.df, index_Y_SNPs, index_X_SNPs, sfx="", hetgamsex =
   dev.off()
  gender_output 
  }
-
