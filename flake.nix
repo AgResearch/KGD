@@ -93,17 +93,6 @@
           };
         in
         {
-          devShells.default = pkgs.mkShell {
-            buildInputs = [ KDG-R ];
-
-            shellHook = ''
-              mkdir -p "$(pwd)/_libs"
-              export R_LIBS_USER="$(pwd)/_libs"
-            
-              export NIX_CFLAGS_COMPILE=" -isystem ${pkgs.rPackages.RcppArmadillo}/library/RcppArmadillo/include -isystem ${pkgs.rPackages.Rcpp}/library/Rcpp/include -isystem ${pkgs.R}/lib/R/include " 
-            '';
-          };
-
           packages = {
             src = KDG-src;
           };
