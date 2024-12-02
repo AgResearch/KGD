@@ -1,5 +1,5 @@
 #!/bin/echo Source me don't execute me 
-pedver <- "1.2.1"
+pedver <- "1.3.0"
 cat("GBS-PedAssign for KGD version:",pedver,"\n")
 
   verif.ch <- c(".","Y","N")  # NA, Y, N
@@ -16,6 +16,7 @@ pedsetup <- function() {
  if (!exists("rel.threshM"))  rel.threshM <<- rel.thresh
  if (!exists("emm.thresh"))   emm.thresh  <<- 0.01           # Excess for single parent match
  if (!exists("emm.thresh2"))  emm.thresh2 <<- 2*emm.thresh   # Excess for parent-pair match
+ if (!exists("doublemm"))     doublemm <<- FALSE   # count 2 for AA x AA = BB types?
  if (!exists("emmdiff.thresh2"))  emmdiff.thresh2 <<- 0  # alternate parent-pair based on emm
  if (!exists("inb.thresh"))   inb.thresh  <<- 0.2       # par relatedness - 2 * inbreeding
  if (!exists("minr4inb"))     minr4inb    <<- NULL      # par relatedness - inbreeding
@@ -33,6 +34,7 @@ pedsetup <- function() {
  cat("Parentage parameter settings\n----------------------------\n rel.threshF\t",rel.threshF,
      "\n rel.threshM\t",rel.threshM,
      "\n emm.thresh\t",emm.thresh,
+     "\n doublemm\t",doublemm,
      "\n emm.thresh2\t",emm.thresh2,
      "\n emmdiff.thresh2",emmdiff.thresh2,
      "\n mindepth.mm\t",mindepth.mm,
@@ -150,18 +152,32 @@ mismatch.2par <- function(offspring.id, par1.id, par2.id,alph=Inf, pedinfo) {
    ptemp <- puse[usnp]
    P <- ptemp*(1-ptemp)
    expmm <- rep(NA,length(usnp))
-   ug <- which(pi==1)
-   if(length(ug)>0) expmm[ug] <- 
+   if(!doublemm) {
+    ug <- which(pi==1)
+    if(length(ug)>0) expmm[ug] <- 
         ( ptemp[ug]^2 * P[ug] *(Km[ug]+Kf[ug])*(1+ Ko[ug]) + P[ug]^2*(2*Ko[ug] + Km[ug] + Kf[ug] - Kf[ug] *Km[ug] +2*Km[ug] *Ko[ug] +2 *Kf[ug] *Ko[ug] - 2 *Kf[ug] *Km[ug] *Ko[ug]) +
                  2*P[ug] *(1-ptemp[ug])^2 * Ko[ug] ) / (ptemp[ug]^2+2*P[ug]*Ko[ug])
-   ug <- which(pi==0.5)
-   if(length(ug)>0) expmm[ug] <- ( (1-2*P[ug]) *(Km[ug]+Kf[ug]) +4*P[ug]*Kf[ug] *Km[ug] ) / 2
-   ug <- which(pi==0)
-   if(length(ug)>0) expmm[ug] <- 
+    ug <- which(pi==0.5)
+    if(length(ug)>0) expmm[ug] <- ( (1-2*P[ug]) *(Km[ug]+Kf[ug]) +4*P[ug]*Kf[ug] *Km[ug] ) / 2
+    ug <- which(pi==0)
+    if(length(ug)>0) expmm[ug] <- 
        ( 2*ptemp[ug]^2 * P[ug] * Ko[ug]  + P[ug]^2*(2*Ko[ug] + Km[ug] + Kf[ug] - Kf[ug] *Km[ug] +2*Km[ug] *Ko[ug] +2 *Kf[ug] *Ko[ug] - 2 *Kf[ug] *Km[ug] *Ko[ug]) +
                  P[ug] *(1-ptemp[ug])^2 * (Km[ug]+Kf[ug])*(1+ Ko[ug])) / ((1-ptemp[ug])^2+2*P[ug]*Ko[ug])
+    } else { # doublemm
+    ug <- which(pi==1)
+    if(length(ug)>0) expmm[ug] <- 
+        ( ptemp[ug]^2 * P[ug] *(Km[ug]+Kf[ug])*(1+ Ko[ug]) + P[ug]^2*(2*Ko[ug] + Km[ug] + Kf[ug] +2*Km[ug] *Ko[ug] +2 *Kf[ug] *Ko[ug]) +
+                 2*P[ug] *(1-ptemp[ug])^2 * Ko[ug] * (1+ Km[ug] + Kf[ug]) ) / (ptemp[ug]^2+2*P[ug]*Ko[ug])
+    ug <- which(pi==0.5)
+    if(length(ug)>0) expmm[ug] <- ( (1-2*P[ug]) *(Km[ug]+Kf[ug]) +4*P[ug]*Kf[ug] *Km[ug] ) / 2
+    ug <- which(pi==0)
+    if(length(ug)>0) expmm[ug] <- 
+       ( 2*ptemp[ug]^2 * P[ug] * Ko[ug] * (1+ Km[ug] + Kf[ug])  + P[ug]^2*(2*Ko[ug] + Km[ug] + Kf[ug] +2*Km[ug] *Ko[ug] +2 *Kf[ug] *Ko[ug]) +
+                 P[ug] *(1-ptemp[ug])^2 * (Km[ug]+Kf[ug])*(1+ Ko[ug])) / ((1-ptemp[ug])^2+2*P[ug]*Ko[ug])
+    }
    exp.mmrate[ioffspring] <- mean(expmm,na.rm=TRUE)
    nmismatch[ioffspring] <- length(which(abs(pi - pj) == 1 | abs(pi - pk) == 1 | (pj == pk & !pj==0.5 & pi == 0.5)))
+   if(doublemm) nmismatch[ioffspring] <-  nmismatch[ioffspring] + length(which(abs(pi - pj) == 1 & pj==pk ))
    ncompare[ioffspring] <- length(usnp)
    }
   mmrate <- nmismatch/ncompare
@@ -349,6 +365,7 @@ trioplots <- function(BothMatches) {
     plotcol[which(sampdepth[uo] < 0.5 ) ] <- "grey75"
     uplot <- which(!is.na(BothMatches$relF1M1))
     if(length(uplot) > 0) {
+      if(sum(!is.na(BothMatches$Inb[uplot])) > 0) {
       png("ParRel-Inb.png", width = 960, height = 960, pointsize = cex.pointsize *  21)
 #       plot(BothMatches$relF1M1[uplot] ~ BothMatches$Inb[uplot],pch=plotch[uplot],col=plotcol[uplot],sub="0.5 <= mean depth < 1",col.sub="skyblue2",
 #            xlab="Estimated Inbreeding",ylab="Estimated (best match) parent relatedness", cex.sub=0.9)
@@ -367,6 +384,7 @@ trioplots <- function(BothMatches) {
        title(sub="X: unassigned parent(s)",adj=0,cex.sub=0.9)
        title(sub="mean depth < 0.5",col.sub="grey75",adj=0.95,cex.sub=0.8)
        dev.off()
+       }
       png(paste0("ExpMM-Both.png"), width = 640, height = 640, pointsize = cex.pointsize *  18)
        plot(mmrateF1M1 ~ exp.mmrateF1M1, data=BothMatches[uplot,,drop=FALSE], main = paste("Best Parent Matches"), xlab = "Expected mismatch rate", 
            ylab = "Raw mismatch rate",col=fcolo[uo][uplot], pch=plotch[uplot], cex=0.8)
@@ -791,17 +809,18 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
      BothMatches$relF2M2 <- eval(parse(text = GCheck))[cbind(uf,um)]
      uo <- match(BothMatches$seqID,seqID[indsubset])
      BothMatches$Inb <- diag(eval(parse(text = GCheck)))[uo] - 1
+     tempInb <- BothMatches$Inb; tempInb[is.na(tempInb)] <- 100 # arbitrary high so not a fail in Inb tests
      EMMrates <- with(BothMatches,cbind(mmrateF2M2-exp.mmrateF2M2,mmrateF1M1-exp.mmrateF1M1))
      EMMrate.min <- apply(EMMrates, MARGIN=1, min)
      if (is.null(minr4inb)) minr4inb <<- min(BothMatches$relF1M1) - 0.001
      BothMatches$BothAssign[which(EMMrates[,2] > emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:4])] <- "E"
      BothMatches$BothAssign[EMMrates[,2]-EMMrate.min > emmdiff.thresh2 & EMMrate.min < emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:5]] <- "A"
-     BothMatches$BothAssign[which(BothMatches$relF1M1 - 2 * BothMatches$Inb > inb.thresh & BothMatches$relF1M1 > minr4inb & BothMatches$BothAssign == "Y")] <- "I"
+     BothMatches$BothAssign[which(BothMatches$relF1M1 - 2 * tempInb > inb.thresh & BothMatches$relF1M1 > minr4inb & BothMatches$BothAssign == "Y")] <- "I"
      BothMatches$Alternate <- ""
      Apos <- which(BothMatches$BothAssign %in% c("A","I"))
      for (ipos in Apos) {
       altOK <- TRUE
-      if (BothMatches$relF2M2[ipos] - 2 * BothMatches$Inb[ipos] > inb.thresh | EMMrate.min[ipos] > emm.thresh2) altOK <- FALSE
+      if (BothMatches$relF2M2[ipos] - 2 * tempInb[ipos] > inb.thresh | EMMrate.min[ipos] > emm.thresh2) altOK <- FALSE
       if(BothMatches$Fatherrel2nd[ipos] < rel.threshF) altOK <- FALSE
       if(BothMatches$Motherrel2nd[ipos] < rel.threshM) altOK <- FALSE
       if(altOK) BothMatches$Alternate[ipos] <- "F2M2"
@@ -936,6 +955,7 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       BothMatches$relF2M2 <- eval(parse(text = GCheck))[cbind(uf,um)]
       uo <- match(BothMatches$seqID,seqID[indsubset])
       BothMatches$Inb <- diag(eval(parse(text = GCheck)))[uo] - 1
+      tempInb <- BothMatches$Inb; tempInb[is.na(tempInb)] <- 100 # arbitrary high so not a fail in Inb tests
       BothMatches$BothAssign <- assign.rank[pmax(match(BothMatches$FatherAssign,assign.rank),match(BothMatches$MotherAssign,assign.rank),na.rm=TRUE)]
       BothMatches$BothAssign[BothMatches$FatherAssign=="Y" & is.na(BothMatches$MotherAssign)] <- "F"
       BothMatches$BothAssign[BothMatches$MotherAssign=="Y" & is.na(BothMatches$FatherAssign)] <- "M"
@@ -944,7 +964,7 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
       if (is.null(minr4inb)) minr4inb <<- min(BothMatches$relF1M1) - 0.001
       BothMatches$BothAssign[which(EMMrates[,4] > emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:4])] <- "E"
       BothMatches$BothAssign[EMMrates[,4]-EMMrate.min > emmdiff.thresh2 & EMMrate.min < emm.thresh2 & BothMatches$BothAssign %in% assign.rank[1:5]] <- "A"
-      BothMatches$BothAssign[which(BothMatches$relF1M1 - 2 * BothMatches$Inb > inb.thresh & BothMatches$relF1M1 > minr4inb & BothMatches$BothAssign == "Y")] <- "I"
+      BothMatches$BothAssign[which(BothMatches$relF1M1 - 2 * tempInb > inb.thresh & BothMatches$relF1M1 > minr4inb & BothMatches$BothAssign == "Y")] <- "I"
       BothMatches$BothAssign[which(BothMatches$FatherAssign == "Y" & BothMatches$BothAssign == "N")] <- "F"
       BothMatches$BothAssign[which(BothMatches$MotherAssign == "Y" & BothMatches$BothAssign == "N")] <- "M"
       BothMatches$BothAssign[which(BothMatches$FatherAssign == "Y" & BothMatches$BothAssign %in% c("E") & BothMatches$MotherAssign %in% c("E"))] <- "F"
@@ -956,7 +976,7 @@ if (OK4ped & exists("pedfile") & exists("GCheck")) {
        altpar <- c("F2M2","F1M2","F2M1")[which.min(EMMrates[ipos,1:3])]
        if(length(altpar) > 0) {
         altOK <- TRUE
-        if (BothMatches[ipos,paste0("rel",altpar)] - 2 * BothMatches$Inb[ipos] > inb.thresh | EMMrate.min[ipos] > emm.thresh2) altOK <- FALSE
+        if (BothMatches[ipos,paste0("rel",altpar)] - 2 * tempInb[ipos] > inb.thresh | EMMrate.min[ipos] > emm.thresh2) altOK <- FALSE
         if (grepl("F2",altpar)) {
          if(BothMatches[ipos, "Fatherrel2nd"] < rel.threshF | BothMatches[ipos, "mmrateFather2"] - BothMatches[ipos, "exp.mmrateFather2"] > emm.thresh ) altOK <- FALSE
          }
