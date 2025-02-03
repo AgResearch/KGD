@@ -1,4 +1,4 @@
-PopGenver <- "1.1.0"
+PopGenver <- "1.3.1"
 cat("GBS-PopGen for KGD version:",PopGenver,"\n")
 
 heterozygosity <- function(indsubsetgf=1:nind,snpsubsetgf=1:nsnps,maxiter=100,convtol=0.001){
@@ -123,9 +123,10 @@ popmaf <- function(snpsubset, indsubset, populations=NULL, subpopulations=NULL, 
  if (missing(snpsubset))   snpsubset <- 1:nsnps
  if (missing(indsubset))   indsubset <- 1:nind
  if (!missing(colobj)) {populations=colobj$collabels[match(colobj$sampcol,colobj$collist)]; indcol <- colobj$sampcol }
- if (missing(indcol)) indcol <- rep("black",nind)
- if(is.null(populations)) populations <- rep("",nind)
- if(is.null(subpopulations)) subpopulations <- rep("",nind)
+ nindsub <- length(indsubset)
+ if (missing(indcol)) indcol <- rep("black",nindsub)
+ if(is.null(populations)) populations <- rep("",nindsub)
+ if(is.null(subpopulations)) subpopulations <- rep("",nindsub)
  popnames <- unique(populations[indsubset])
  sublevs <- unique(subpopulations[indsubset])
  if(sortlevels) {popnames <- sort(popnames); sublevs <- sort(sublevs) }
@@ -223,7 +224,7 @@ manhatplot <- function(value, chrom, pos, plotname, qdistn=qunif, keyrot=0, syms
   if(length(symsize)==length(value)) symsize <- symsize0[order(value)]
   qqplot(qdistn(ppoints(length(value)),...), y=value, xlab="Theoretical quantiles", ylab=paste(valuetext,"quantiles"), cex=symsize,
          sub="Line for mid 98% of values", col=chromcol$sampcol[order(value)])
-  qqline(value,col=2, distribution = function(p) qdistn(p, ...),prob=c(0.01,0.99))
+  qqline(value,col=2, distribution = function(p) qdistn(p, ...),probs=c(0.01,0.99))
   if(!is.null(legendm)) legendm()
   dev.off()
  }

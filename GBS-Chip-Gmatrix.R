@@ -1,6 +1,6 @@
 #!/bin/echo Source me don't execute me 
 
-KGDver <- "1.3.0"
+KGDver <- "1.3.1"
 cat("KGD version:",KGDver,"\n")
 if (!exists("nogenos"))          nogenos          <- FALSE
 if (!exists("gform"))            gform            <- "uneak"
@@ -529,10 +529,12 @@ HWsigplot <- function(HWdiseq=HWdis, MAF=maf, ll=l10LRT, plotname="HWdisMAFsig",
 finclass <- function(HWdiseq=HWdis, MAF=maf, colobj, classname=NULL, plotname="finclass", finxlim=c(0,0.5), finylim=c(-0.25, 0.25)) {
  if(missing(colobj)) colobj <-  list(collabels="",collist="black",sampcol=rep("black",length(MAF)))
  plotord <- 1:length(MAF)  # fixed for now, keep in case want to allow reordering
+ if(is.null(classname) & "col.name" %in% names(colobj)) classname=colobj$col.name
  png(paste0(plotname,".png"), width = 640, height = 640, pointsize = cex.pointsize *  15)
   plot(HWdiseq[plotord] ~ MAF[plotord], col = colobj$sampcol[plotord], cex = 0.8, xlab = "Minor Allele Frequency", 
        ylab = "Hardy-Weinberg disequilibrium", cex.lab = 1.5, xlim=finxlim, ylim=finylim)
-  legend(0.05, -0.075, legend=colobj$collabels,col=colobj$collist,pch=1,title=classname)
+  legcex <- 1; if(length(colobj$collabels) > 5) legcex <- 0.8
+  legend(0.05, -0.075, legend=colobj$collabels,col=colobj$collist,pch=1,title=classname, cex = legcex)
   dev.off()
  }
 
@@ -1468,7 +1470,7 @@ mergeSamples2 <- function(mergeIDs, indsubset) {
  }
 
 plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,negcol="grey", focusinfo, focuscol="black",
-             colpal = hcl.colors(80,palette="YlGnBu", rev=TRUE)) {
+             colpal = hcl.colors(80,palette="YlGnBu", rev=TRUE), vflip=FALSE) {
  if(vardesc=="") vardesc <- as.character(substitute(plotvar))
  infonames <- names(plateinfo)
  if(!"row"  %in% infonames | ! "column" %in% infonames) stop("row and/or column not in plateinfo")
@@ -1532,6 +1534,7 @@ plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,ne
  zmat <- xtabs( plotvar ~ plateinfo$row + plateinfo$column)  # sums (if needed) plotvar
  zmat[which(zmat==0)] <- NA
  maxrow <- nrow(zmat); maxcol <- ncol(zmat)
+ if(vflip) zmat <- zmat[maxrow:1,,drop=FALSE]   
 
  png(paste0("Plate",sfx,".png"), pointsize = cex.pointsize *  12)
   image(t(zmat), axes=FALSE,xlab="Plate column",ylab="Plate row",col=colpal,cex.lab=1.2)  
@@ -1546,6 +1549,7 @@ plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,ne
   subplateids <- sort(unique(plateinfo$subplate))
   subplatecols <- rainbow(length(subplateids),alpha=0.2)
   zmatc <- xtabs( match(plateinfo$subplate,subplateids) ~ plateinfo$row + plateinfo$column) 
+  if(vflip) zmatc <- zmatc[maxrow:1,,drop=FALSE]   
   zmatc[which(is.na(zmat))] <- NA
   png(paste0("Subplate",sfx,".png"), pointsize = cex.pointsize *  12)
    image(t(zmat), axes=FALSE,xlab="Plate column",ylab="Plate row",col=colpalgray,cex.lab=1.2)
@@ -1554,7 +1558,7 @@ plateplot <- function(plateinfo,plotvar=sampdepth,vardesc="", sfx="", neginfo,ne
    axis(2,at=(0:(nrow(zmat)-1))/(max(2,nrow(zmat))-1),labels=rownames(zmat),cex.axis=0.8)
    if(!missing(neginfo)) markneg(negcol=negcol)
    if(!missing(focusinfo)) markfocus(focuscol=focuscol)
-   addlegend(plotvar=plotvar, main=vardesc, colpalette=colpalgray, subid=subplateids, subcol=subplatecols)
+   addlegend(plotvar=as.numeric(zmat), main=vardesc, colpalette=colpalgray, subid=subplateids, subcol=subplatecols)
    dev.off()
   }
  invisible(NULL)
@@ -1683,9 +1687,11 @@ calcG <- function(snpsubset, sfx = "", puse, indsubset, depth.min = 0, depth.max
    } else {
    cat("Mean co-call rate (for sample pairs):", mean(upper.vec(cocall)/nsnpsub), "\n")
    cat("Min  co-call rate (for sample pairs):", min(upper.vec(cocall)/nsnpsub), "\n")
-   png(paste0("Co-call-", sfx, ".png"), pointsize = cex.pointsize * 12)
-    hist(upper.vec(cocall)/nsnpsub, breaks = 50, xlab = "Co-call rate (for sample pairs)", main="", col = "grey")
-    dev.off()
+   if(calclevel > 1 & nrow(cocall) <= sqrt(2*.Machine$integer.max) ) { # hist cant handle more than integer.max values
+    png(paste0("Co-call-", sfx, ".png"), pointsize = cex.pointsize * 12)
+     hist(upper.vec(cocall)/nsnpsub, breaks = 50, xlab = "Co-call rate (for sample pairs)", main="", col = "grey")
+     dev.off()
+    }
    lowpairs <- which(cocall/nsnpsub <= cocall.thresh & upper.tri(cocall),arr.ind=TRUE)
    }
   if (have_rcpp & storage.mode(depthsub)=="integer") {
@@ -2106,9 +2112,9 @@ bbestimate <- function(mergeIDs,bbgroup,bbinfo,Inbstd,repid,snpsubset,puse=p, mi
     ubb <- which(sampdepth >mindepth.bb & bbgroup==bbinfo$bbgroup[ifc])  
     depth2K <<- depth2Kchoose (dmodel="bb", param=Inf)  # make sure it is binomial
     SepInb <- calcGdiag(indsubset = ubb,snpsubset=snpsubset,puse=puse)-1
-    Sepmean <- mean(SepInb,na.rm=TRUE)
-    Stdmean <- mean(Inbstd[ubb],na.rm=TRUE)
-    if(Sepmean < Stdmean) {
+    Sepmean <- max(-999,mean(SepInb,na.rm=TRUE),na.rm=TRUE)
+    Stdmean <- min(999,mean(Inbstd[ubb],na.rm=TRUE),na.rm=TRUE)
+    if(Sepmean < Stdmean) { # min max above ensures missings get a TRUE here
       bbinfo$bbalpha[ifc] <- 1e6 # arbitrary high
       } else {
      coldepth <- colourby(sampdepth[ubb],nbreaks=40,hclpals="Teal",rev=TRUE, col.name="Depth")
@@ -2539,16 +2545,23 @@ Gbend <- function(GRM,mineval=0.001, doplot=TRUE, sfx="", evalsum="free") {
 }
 
 ## function to use in writeVCF
-genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref, alt, depth
-  nobj <- length(vec)/10
-  outstr <-  gsub("NA",".",gsub("NA,","",paste(vec[1:nobj],paste(vec[nobj+(1:nobj)],vec[2*nobj+(1:nobj)],vec[3*nobj+(1:nobj)],sep=","), 
-                   paste(vec[4*nobj+(1:nobj)],vec[5*nobj+(1:nobj)],vec[6*nobj+(1:nobj)],sep=","), 
-                   paste(vec[7*nobj+(1:nobj)],vec[8*nobj+(1:nobj)],sep=","),vec[9*nobj+(1:nobj)], sep=":")))
-  }
-
+#genostring <- function(vec) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref, alt, depth
+#  nobj <- length(vec)/10
+#  outstr <-  gsub("NA",".",gsub("NA,","",paste(vec[1:nobj],paste(vec[nobj+(1:nobj)],vec[2*nobj+(1:nobj)],vec[3*nobj+(1:nobj)],sep=","), 
+#                   paste(vec[4*nobj+(1:nobj)],vec[5*nobj+(1:nobj)],vec[6*nobj+(1:nobj)],sep=","), 
+#                   paste(vec[7*nobj+(1:nobj)],vec[8*nobj+(1:nobj)],sep=","),vec[9*nobj+(1:nobj)], sep=":")))
+#  }
+genostring <- function(vec,nextra=0) {  #vec has gt, paa, pab ,pbb, llaa, llab, llbb, ref, alt, depth
+  nobj <- length(vec)/(10+nextra)
+  outstr <-  paste(vec[1:nobj],paste(vec[nobj+(1:nobj)],vec[2*nobj+(1:nobj)],vec[3*nobj+(1:nobj)],sep=","), 
+                               paste(vec[4*nobj+(1:nobj)],vec[5*nobj+(1:nobj)],vec[6*nobj+(1:nobj)],sep=","), 
+                               paste(vec[7*nobj+(1:nobj)],vec[8*nobj+(1:nobj)],sep=","),vec[9*nobj+(1:nobj)], sep=":")
+  if(nextra>0) for(ix in 1:nextra) outstr <- paste(outstr,vec[(9+ix)*nobj+(1:nobj)], sep=":")
+  outstr
+}
 ## Write KGD back to VCF file
 writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDuse, keepgt=TRUE, mindepth=0, allele.ref="C", allele.alt="G", GTmethod="observed",
-                     verlabel="4.3",usePL=FALSE, contig.meta=FALSE, CHROM=NULL, POS=NULL){
+                     verlabel="4.3",usePL=FALSE, contig.meta=FALSE, CHROM=NULL, POS=NULL, extrafields=list()){
   gform <- tolower(gform)
   if (is.null(outname)) outname <- "GBSdata"
   filename <- paste0(outname,".vcf")
@@ -2591,8 +2604,9 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
                     '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
                     '##FORMAT=<ID=GP,Number=G,Type=Float,Description="Genotype Probability">', 
                     metalik, 
-                    '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele Read Counts">\n',
+                    '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allele Read Counts">',
                     '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read Depth">\n',sep="\n")
+  if(length(extrafields)>0) for(ix in 1:length(extrafields)) metaInfo <- paste0(metaInfo,extrafields[[ix]]$formatkey,"\n")
   cat(metaInfo, file=filename)
   if(contig.meta) write.table(cbind("##contig=<ID=",SNP_Names[snpsubset],">"),file=filename,sep="",quote=FALSE,row.names=FALSE,col.names=FALSE,append=TRUE)
   ## colnames:
@@ -2622,7 +2636,8 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   out[,8] <- rep(".", length(snpsubset))
   out[,9] <- rep("GT:GP:GL:AD:DP", length(snpsubset))
   if(usePL)  out[,9] <- rep("GT:GP:PL:AD:DP", length(snpsubset))
-  
+  if(length(extrafields)>0) for(ix in 1:length(extrafields)) out[,9] <- paste0(out[,9],":",extrafields[[ix]]$fieldname)
+
   ## compute probs
   paa <- (1-ep)^ref*ep^alt*pmat^2
   pab <- (1/2)^(ref+alt)*2*pmat*(1-pmat)
@@ -2677,13 +2692,19 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   }
   if (is.big) {
    gt <- apply(genon0+2, 2, function(x) c("./.","1/1","0/1","0/0")[x])
-   out[,-c(1:9)] <- apply(cbind(gt,paa,pab,pbb,llaa,llab,llbb,ref,alt,depthsub),1,genostring)
+   genovalues <- cbind(gt,paa,pab,pbb,llaa,llab,llbb,ref,alt,depthsub)
+   if(length(extrafields)>0) for(ix in 1:length(extrafields)) genovalues <- cbind(genovalues,extrafields[[ix]]$value)
+   out[,-c(1:9)] <- apply(genovalues,1,genostring,nextra=length(extrafields))
+   #out[,-c(1:9)] <- apply(cbind(gt,paa,pab,pbb,llaa,llab,llbb,ref,alt,depthsub),1,genostring)
    } else {
    gt <- sapply(as.vector(genon0), function(x) switch(x+2,"./.","1/1","0/1","0/0"))
-   out[,-c(1:9)] <- matrix(gsub("NA",".",gsub("NA,","",paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","),depthsub, sep=":"))),
+   out[,-c(1:9)] <- matrix(paste(gt,paste(paa,pab,pbb,sep=","),paste(llaa,llab,llbb,sep=","), paste(ref,alt,sep=","),depthsub, sep=":"),
                            nrow=length(snpsubset), ncol=length(indsubset), byrow=TRUE)
-      # for missings, first change NA, to empty so that any set of NA,NA,...,NA changes to NA, then can set that to . which is vcf missing for the whole field
+   if(length(extrafields)>0) for(ix in 1:length(extrafields)) out[,-c(1:9)] <- paste(out[,-c(1:9)],extrafields[[ix]]$value,sep=":")
+
    }
+   out[,-c(1:9)] <- gsub("NA",".",gsub("NA,","",out[,-c(1:9)]))
+     # for missings, first change NA, to empty so that any set of NA,NA,...,NA changes to NA, then can set that to . which is vcf missing for the whole field
   options(scipen=temp)
 
   outord <- 1:nrow(out)
