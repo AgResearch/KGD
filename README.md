@@ -11,8 +11,8 @@ This project was supported by the Ministry of Business, Innovation and Employmen
 
 Please cite
 
-Dodds, K G, McEwan, J C, Brauning, R, Anderson, R A, Van Stijn, T C, Kristjánsson, T and Clarke, S M (2015) Construction of relatedness matrices using genotyping-by-sequencing data. *BMC Genomics* **16**, 1047. https://doi.org/10.1186/s12864-015-2252-3
+Dodds, K G, McEwan, J C, Brauning, R, Anderson, R A, Van Stijn, T C, Kristjánsson, T and Clarke, S M (2015) Construction of relatedness matrices using genotyping-by-sequencing data. *BMC Genomics* **16**, 1047. [DOI](https://doi.org/10.1186/s12864-015-2252-3) [GoogleScholar citations](https://scholar.google.com/scholar?hl=en&cites=10840046335958418721)
 
 and for parentage assignment
 
-Dodds, K G, McEwan, J C, Brauning, R, Van Stijn, T C, Rowe, S J, McEwan, K M and Clarke, S M (2019) Exclusion and genomic relatedness methods for assignment of parentage using genotyping-by-sequencing data. *G3: Genes, Genomes, Genetics* **9**, 3239-3247. https://doi.org/10.1534/g3.119.400501 
+Dodds, K G, McEwan, J C, Brauning, R, Van Stijn, T C, Rowe, S J, McEwan, K M and Clarke, S M (2019) Exclusion and genomic relatedness methods for assignment of parentage using genotyping-by-sequencing data. *G3: Genes, Genomes, Genetics* **9**, 3239-3247. [DOI](https://doi.org/10.1534/g3.119.400501) [GoogleScholar citations](https://scholar.google.com/scholar?hl=en&cites=16774971615445565137)
