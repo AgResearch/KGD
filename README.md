@@ -17,4 +17,4 @@ Dodds, K G, McEwan, J C, Brauning, R, Van Stijn, T C, Rowe, S J, McEwan, K M and
 
 for population differences (Fst functions)
 
-Dodds, K G, McEwan, J C, Brauning, R, & Clarke, S M (2025). Assessing population allele frequency differences using low-depth sequencing data. Journal of the Royal Society of New Zealand, (early online). [DOI] (https://doi.org/10.1080/03036758.2025.2500999)
+Dodds, K G, McEwan, J C, Brauning, R, & Clarke, S M (2025). Assessing population allele frequency differences using low-depth sequencing data. _Journal of the Royal Society of New Zealand_, (early online). [DOI](https://doi.org/10.1080/03036758.2025.2500999)
