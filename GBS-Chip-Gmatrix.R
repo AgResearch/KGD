@@ -2567,8 +2567,10 @@ writeVCF <- function(indsubset, snpsubset, outname=NULL, ep=0.001, puse = p, IDu
   filename <- paste0(outname,".vcf")
   if(gform=="chip" & max(depth) == Inf & !exists("alleles")) {  # create alleles for chip data
    ref <- alt <- matrix(0,nrow=nind, ncol=nsnps)
-   ref[genon >= 1] <- Inf
-   alt[genon <= 1] <- Inf
+   ref[genon > 1] <- 10000
+   ref[genon == 1] <- 1e-8
+   alt[genon < 1] <- 10000
+   alt[genon == 1] <- 1e-8
    }
   else if(!exists("alleles"))
     stop("Allele matrix does not exist. Change the 'alleles.keep' argument to TRUE and rerun KGD")
