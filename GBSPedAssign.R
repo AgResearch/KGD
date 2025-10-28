@@ -1,5 +1,5 @@
 #!/bin/echo Source me don't execute me 
-pedver <- "1.4.0"
+pedver <- "1.4.1"
 cat("GBS-PedAssign for KGD version:",pedver,"\n")
 
   verif.ch <- c(".","Y","N")  # NA, Y, N

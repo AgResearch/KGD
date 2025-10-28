@@ -1,4 +1,4 @@
-PopGenver <- "1.4.0"
+PopGenver <- "1.4.1"
 cat("GBS-PopGen for KGD version:",PopGenver,"\n")
 
 heterozygosity <- function(indsubsetgf=1:nind,snpsubsetgf=1:nsnps,maxiter=100,convtol=0.001){

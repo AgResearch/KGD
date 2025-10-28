@@ -6,7 +6,7 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  # KGD is not a first-class R package, merely a collection of R source files
+  # KGD is not an R package, merely a collection of R source files
   # to be source'd into the caller's environment.
   #
   # The Nix package enables these R sources to be used directly from the Nix store.
@@ -33,7 +33,7 @@
 
           KDG-src = pkgs.stdenv.mkDerivation {
             pname = "KDG-src";
-            version = "1.4.0";
+            version = "1.4.1";
 
             src = ./.;
 
