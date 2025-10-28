@@ -33,7 +33,7 @@
 
           KDG-src = pkgs.stdenv.mkDerivation {
             pname = "KDG-src";
-            version = "1.3.2";
+            version = "1.4.0";
 
             src = ./.;
 
