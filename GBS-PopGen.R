@@ -1,4 +1,4 @@
-PopGenver <- "1.3.2"
+PopGenver <- "1.4.0"
 cat("GBS-PopGen for KGD version:",PopGenver,"\n")
 
 heterozygosity <- function(indsubsetgf=1:nind,snpsubsetgf=1:nsnps,maxiter=100,convtol=0.001){
@@ -31,7 +31,7 @@ heterozygosity <- function(indsubsetgf=1:nind,snpsubsetgf=1:nsnps,maxiter=100,co
    }
   ohet[isnp] <- pnew[2]
   }
- effnumind <- mean(colSums(1-depth2K(depth[indsubsetgf, snpsubsetgf])))
+ effnumind <- mean(colSums(1-depth2K(depth[indsubsetgf, snpsubsetgf,drop=FALSE])))
  data.frame(neff = effnumind, ohetstar=obshet, ehetstar=ehetstar, ohet=mean(ohet, na.rm=TRUE),ohet2=ohet2, ehet=ehettrue)
 }
 
@@ -117,16 +117,16 @@ Fst.GBS.pairwise <- function(snpsubset, indsubset, populations,sortlevels=TRUE, 
 
 
 
-
 popmaf <- function(snpsubset, indsubset, populations=NULL, subpopulations=NULL, indcol, colobj, minsamps=10, mafmin=0, sortlevels=TRUE, unif = FALSE) {
  #populations defined relative to full set (length nind)
  if (missing(snpsubset))   snpsubset <- 1:nsnps
  if (missing(indsubset))   indsubset <- 1:nind
  if (!missing(colobj)) {populations=colobj$collabels[match(colobj$sampcol,colobj$collist)]; indcol <- colobj$sampcol }
  nindsub <- length(indsubset)
- if (missing(indcol)) indcol <- rep("black",nindsub)
- if(is.null(populations)) populations <- rep("",nindsub)
- if(is.null(subpopulations)) subpopulations <- rep("",nindsub)
+ if (missing(indcol)) indcol <- rep("black",nind)
+ if(is.null(populations)) populations <- rep("",nind)
+ if(is.null(subpopulations)) subpopulations <- rep("",nind)
+ if(length(populations) != nind) stop("populations (colobj) should be of length ", nind,"\n")
  popnames <- unique(populations[indsubset])
  sublevs <- unique(subpopulations[indsubset])
  if(sortlevels) {popnames <- sort(popnames); sublevs <- sort(sublevs) }
